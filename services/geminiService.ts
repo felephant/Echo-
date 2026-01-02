@@ -124,11 +124,16 @@ export const generateEntryReply = async (entryContent: string, language: string 
 export const generateSearchKeywords = async (entryContent: string, language: string = 'English'): Promise<string[]> => {
   if (!apiKey) return [];
 
-  const prompt = `Analyze the user's journal entry below and extract 3-5 distinct, specific keywords or short phrases (in the same language as the entry) that would serve as good search terms to find related past entries in a personal journal database.
+  const prompt = `Analyze the user's journal entry below and extract 6-8 distinct search terms.
+  
+  Instructions:
+  1. Identify specific entities (people, places, items).
+  2. Identify broader topics or themes.
+  3. Include synonyms or related concepts (in the same language) that might appear in past entries about similar topics.
   
   User Entry: "${entryContent}"
   
-  Return a JSON array of strings (the keywords).`;
+  Return a JSON array of strings (the keywords/phrases).`;
 
   try {
     const response = await ai.models.generateContent({

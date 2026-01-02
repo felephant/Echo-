@@ -106,14 +106,17 @@ export const getJournalDates = async (handle: FileSystemDirectoryHandle): Promis
 };
 
 // --- Helper: Search files content ---
-export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keywords: string[]): Promise<RecallItem[]> => {
+export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keywords: string[], excludeDate?: Date): Promise<RecallItem[]> => {
     const results: RecallItem[] = [];
     const limit = 20; // Hard limit to prevent browser freeze
     const keywordSet = keywords.map(k => k.toLowerCase());
+    const excludeFileName = excludeDate ? getFileName(excludeDate) : null;
 
     // @ts-ignore
     for await (const [name, entry] of handle.entries()) {
         if (entry.kind === 'file' && name.match(/^\d{6}\.md$/)) {
+             if (excludeFileName && name === excludeFileName) continue;
+
              try {
                  // @ts-ignore
                  const file = await entry.getFile();

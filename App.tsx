@@ -268,7 +268,8 @@ const App: React.FC = () => {
             setRecallItems([]);
         } else {
              // 2. Real File System Search
-             const results = await searchJournalFiles(fsHandle, keywords);
+             // Pass currentDate to exclude it from results
+             const results = await searchJournalFiles(fsHandle, keywords, currentDate);
              setRecallItems(results);
         }
     } catch (e) {
