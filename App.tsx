@@ -113,41 +113,50 @@ const App: React.FC = () => {
     const isChat = source === 'web-input'; 
     const timestamp = new Date();
     
+    // 1. Create Entry Object (Initially Unsaved)
     const newEntry: JournalEntry = {
       id: Date.now().toString(),
       content,
       timestamp,
       source: isChat ? 'chat' : source,
       isImportant: false,
-      isSaved: true
+      isSaved: false // Explicitly false so the Save button appears/user knows it's pending
     };
 
-    // Optimistic update
+    // 2. Update UI Optimistically
     setDailyEntries(prev => [...prev, newEntry]);
 
+    // 3. Attempt Write to Disk
     if (fsHandle && isFsConnected) {
-        await appendToJournal(fsHandle, currentDate, newEntry);
+        try {
+            await appendToJournal(fsHandle, currentDate, newEntry);
+            // 4. On Success, mark as saved
+            setDailyEntries(prev => prev.map(e => e.id === newEntry.id ? { ...e, isSaved: true } : e));
+        } catch (err) {
+            console.error("Failed to save entry to disk:", err);
+            // It remains isSaved: false, so user sees the Save button to retry
+        }
     }
-
-    if (isChat) {
-        const replyText = await generateEntryReply(content, settings.language);
-        const replyEntry: JournalEntry = {
-            id: (Date.now() + 1).toString(),
-            content: replyText,
-            timestamp: new Date(),
-            source: 'ai-reply',
-            isImportant: false,
-            isSaved: true
-        };
-        
-        setDailyEntries(prev => [...prev, replyEntry]);
-        if (fsHandle && isFsConnected) await appendToJournal(fsHandle, currentDate, replyEntry);
-    }
+    
+    // Removed Auto AI Reply block
   };
 
   const handleSaveEntry = async (id: string) => {
-    // For FS mode, usually saved immediately, but if we had visual-only unsaved logic:
-    setDailyEntries(prev => prev.map(e => e.id === id ? { ...e, isSaved: true } : e));
+    const entryToSave = dailyEntries.find(e => e.id === id);
+    if (!entryToSave) return;
+
+    if (fsHandle && isFsConnected) {
+        try {
+            await appendToJournal(fsHandle, currentDate, entryToSave);
+            setDailyEntries(prev => prev.map(e => e.id === id ? { ...e, isSaved: true } : e));
+        } catch (err) {
+            console.error("Failed to save manual entry:", err);
+            alert("Failed to write to file. Please check folder permissions.");
+        }
+    } else {
+        alert("Please connect a local folder in Settings to save entries.");
+        setIsSettingsOpen(true);
+    }
   };
 
   const handleUnsaveEntry = (id: string) => {
@@ -204,17 +213,28 @@ const App: React.FC = () => {
 
   const handleAiReply = async (entryId: string, content: string) => {
     const replyText = await generateEntryReply(content, settings.language);
+    
+    // Create reply object
     const replyEntry: JournalEntry = {
         id: Date.now().toString(),
         content: replyText,
         timestamp: new Date(),
         source: 'ai-reply',
         isImportant: false,
-        isSaved: true
+        isSaved: false 
     };
 
     setDailyEntries(prev => [...prev, replyEntry]);
-    if (fsHandle && isFsConnected) await appendToJournal(fsHandle, currentDate, replyEntry);
+    
+    // Auto-save the AI reply as well
+    if (fsHandle && isFsConnected) {
+        try {
+            await appendToJournal(fsHandle, currentDate, replyEntry);
+            setDailyEntries(prev => prev.map(e => e.id === replyEntry.id ? { ...e, isSaved: true } : e));
+        } catch (err) {
+            console.error("Failed to save AI reply:", err);
+        }
+    }
   };
 
   const handleUpdateSummary = (summary: DailyData['summary']) => {

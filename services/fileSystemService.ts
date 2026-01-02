@@ -70,15 +70,20 @@ export const selectDirectory = async (): Promise<FileSystemDirectoryHandle | nul
 
 export const verifyPermission = async (handle: FileSystemDirectoryHandle, readWrite: boolean = true): Promise<boolean> => {
   const options = { mode: readWrite ? 'readwrite' : 'read' };
-  // @ts-ignore
-  if ((await handle.queryPermission(options)) === 'granted') {
-    return true;
+  try {
+    // @ts-ignore
+    if ((await handle.queryPermission(options)) === 'granted') {
+        return true;
+    }
+    // @ts-ignore
+    if ((await handle.requestPermission(options)) === 'granted') {
+        return true;
+    }
+    return false;
+  } catch (e) {
+      console.error("Permission check failed", e);
+      return false;
   }
-  // @ts-ignore
-  if ((await handle.requestPermission(options)) === 'granted') {
-    return true;
-  }
-  return false;
 };
 
 // --- Markdown Parsing & formatting ---
@@ -102,15 +107,14 @@ const parseMarkdown = (text: string, date: Date): JournalEntry[] => {
         timestamp.setHours(hours, minutes, 0, 0);
 
         const isImportant = content.includes('#important');
-        // Clean tags from content if desired, or keep them. Keeping them for now.
-
+        
         entries.push({
             id: `${date.getTime()}-${index}`, // Stable ID based on order
             timestamp,
             source: (sourceStr as JournalEntry['source']) || 'user',
             content: content.trim(),
             isImportant,
-            isSaved: true
+            isSaved: true // Entries read from disk are always "saved"
         });
     } else if (line.trim() && entries.length > 0 && !line.startsWith('-')) {
         // Append multiline content
@@ -125,6 +129,7 @@ const formatEntry = (entry: JournalEntry): string => {
   const timeStr = format(entry.timestamp, 'HH:mm');
   const sourceTag = entry.source && entry.source !== 'user' ? ` [${entry.source}]` : '';
   const importantTag = entry.isImportant && !entry.content.includes('#important') ? ' #important' : '';
+  // Ensure multiline content is indented or handled if necessary, but standard markdown list just needs the first line bulleted
   return `- ${timeStr}${sourceTag} ${entry.content}${importantTag}`;
 };
 
@@ -145,20 +150,28 @@ export const readDailyJournal = async (handle: FileSystemDirectoryHandle, date: 
 
 export const appendToJournal = async (handle: FileSystemDirectoryHandle, date: Date, entry: JournalEntry) => {
     const fileName = getFileName(date);
+    
+    // 1. Get or Create File Handle
     const fileHandle = await handle.getFileHandle(fileName, { create: true });
     
-    // Read current to append correctly
-    const file = await fileHandle.getFile();
-    const text = await file.text();
-    const needsNewline = text.length > 0 && !text.endsWith('\n');
-    
+    // 2. Read existing content to safe-append
+    let currentContent = "";
+    try {
+        const file = await fileHandle.getFile();
+        currentContent = await file.text();
+    } catch (e) {
+        // File might be new
+    }
+
+    // 3. Prepare new content
+    const entryText = formatEntry(entry);
+    const separator = currentContent.length > 0 && !currentContent.endsWith('\n') ? '\n' : '';
+    const newContent = currentContent + separator + entryText + '\n';
+
+    // 4. Write full content (Read-Modify-Write pattern is safer than append stream for simple usage)
     // @ts-ignore
-    const writable = await fileHandle.createWritable({ keepExistingData: true });
-    
-    // Move to end
-    // @ts-ignore
-    await writable.write({ type: 'write', position: file.size, data: (needsNewline ? '\n' : '') + formatEntry(entry) + '\n' });
-    
+    const writable = await fileHandle.createWritable();
+    await writable.write(newContent);
     await writable.close();
 };
 
