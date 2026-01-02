@@ -95,30 +95,70 @@ const parseMarkdown = (text: string, date: Date): JournalEntry[] => {
   const lines = text.split('\n');
   const entries: JournalEntry[] = [];
   
-  const entryRegex = /^- (\d{2}:\d{2})(?: \[(.*?)\])? (.*)$/;
+  // Regex to match standard strict format: "- 14:30 [source] Content" or "- 9:00 Content"
+  const timeRegex = /^- (\d{1,2}:\d{2})(?: \[(.*?)\])? (.*)$/;
+  // Regex to match generic list items: "- Content" or "* Content"
+  const bulletRegex = /^[-*] (.*)$/;
 
   lines.forEach((line, index) => {
-    const match = line.match(entryRegex);
-    if (match) {
-        const [_, timeStr, sourceStr, content] = match;
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    // 1. Try strict time match first
+    const timeMatch = line.match(timeRegex);
+    if (timeMatch) {
+        const [_, timeStr, sourceStr, content] = timeMatch;
         const [hours, minutes] = timeStr.split(':').map(Number);
         
         const timestamp = new Date(date);
         timestamp.setHours(hours, minutes, 0, 0);
 
-        const isImportant = content.includes('#important');
-        
         entries.push({
             id: `${date.getTime()}-${index}`, // Stable ID based on order
             timestamp,
             source: (sourceStr as JournalEntry['source']) || 'user',
             content: content.trim(),
-            isImportant,
+            isImportant: content.includes('#important'),
             isSaved: true // Entries read from disk are always "saved"
         });
-    } else if (line.trim() && entries.length > 0 && !line.startsWith('-')) {
-        // Append multiline content
-        entries[entries.length - 1].content += '\n' + line.trim();
+        return;
+    } 
+
+    // 2. Try generic bullet match (treat as untimed entry, default to 00:00 or similar)
+    const bulletMatch = line.match(bulletRegex);
+    if (bulletMatch) {
+        const content = bulletMatch[1];
+        const timestamp = new Date(date);
+        timestamp.setHours(0, 0, 0, 0); // Default to start of day for untimed bullets
+
+        entries.push({
+            id: `${date.getTime()}-${index}`,
+            timestamp,
+            source: 'user',
+            content: content.trim(),
+            isImportant: content.includes('#important'),
+            isSaved: true
+        });
+        return;
+    }
+
+    // 3. Fallback: Plain text line
+    if (entries.length > 0 && !line.startsWith('-') && !line.startsWith('*')) {
+        // Append multiline content to previous entry
+        entries[entries.length - 1].content += '\n' + trimmed;
+    } else {
+        // Orphan text line at start of file? Create a generic entry.
+        const timestamp = new Date(date);
+        timestamp.setHours(0, 0, 0, 0);
+
+        entries.push({
+            id: `${date.getTime()}-${index}`,
+            timestamp,
+            source: 'user',
+            content: trimmed,
+            isImportant: trimmed.includes('#important'),
+            isSaved: true
+        });
     }
   });
 
