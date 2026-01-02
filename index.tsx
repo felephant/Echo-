@@ -2,12 +2,12 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-const mountApp = () => {
+const startApp = () => {
   const rootElement = document.getElementById('root');
-  
-  // Defensive check: ensure root exists before accessing it
+
+  // Safety check: ensure the root element exists in the DOM
   if (!rootElement) {
-    console.error("Could not find root element 'root' to mount to. Retrying or aborting.");
+    console.warn("Root element 'root' not found. App initialization aborted.");
     return;
   }
 
@@ -19,10 +19,10 @@ const mountApp = () => {
   );
 };
 
-// Ensure DOM is fully loaded before executing DOM queries
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', mountApp);
+// Check if the DOM is already ready (interactive or complete)
+// If so, mount immediately. Otherwise, wait for the event.
+if (document.readyState !== 'loading') {
+  startApp();
 } else {
-  // DOM is already ready
-  mountApp();
+  document.addEventListener('DOMContentLoaded', startApp);
 }
