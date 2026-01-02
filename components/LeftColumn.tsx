@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { format, subDays, isSameDay, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths, subMonths, isSameMonth } from 'date-fns';
-import { Calendar as CalendarIcon, RefreshCw, BarChart2, Smile, SlidersHorizontal, ChevronDown, ChevronUp, Heart, Sparkles, PanelLeft, PanelLeftClose, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar as CalendarIcon, RefreshCw, BarChart2, Smile, SlidersHorizontal, ChevronDown, ChevronUp, Heart, Sparkles, ChevronLeft, ChevronRight, Sidebar } from 'lucide-react';
 import { DailyData, OverviewSectionConfig } from '../types';
 import { generateDailySummary } from '../services/geminiService';
 import { translations, Language } from '../utils/translations';
@@ -25,10 +25,9 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['summary']));
   const [isCalendarOpen, setIsCalendarOpen] = useState(true);
-  const [viewDate, setViewDate] = useState(currentDate); // For calendar navigation
+  const [viewDate, setViewDate] = useState(currentDate); 
   const t = translations[language].left;
 
-  // Sync viewDate when currentDate changes externally (e.g. Roam)
   useEffect(() => {
       setViewDate(currentDate);
   }, [currentDate]);
@@ -61,11 +60,8 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
 
   const toggleSection = (id: string) => {
     const newSet = new Set(expandedSections);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-    } else {
-      newSet.add(id);
-    }
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
     setExpandedSections(newSet);
   };
 
@@ -237,7 +233,6 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
     return <div className="space-y-1">{rows}</div>;
   };
 
-  // --- Collapsed View ---
   if (isCollapsed) {
       return (
         <div className="flex flex-col h-full bg-white rounded-2xl shadow-sm overflow-hidden items-center py-4 gap-4">
@@ -246,7 +241,7 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
                 className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                 title="Expand"
              >
-                <PanelLeft size={20} />
+                <Sidebar size={20} />
              </button>
              <div className="w-8 h-px bg-gray-100"></div>
              <div className="flex flex-col items-center gap-1">
@@ -257,7 +252,6 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
       );
   }
 
-  // --- Expanded View ---
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl shadow-sm overflow-y-auto w-full">
       {/* Date Header */}
@@ -291,7 +285,7 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
             className="self-start mb-2 p-1 -ml-1 text-gray-300 hover:text-gray-600 transition-colors"
             title="Collapse"
           >
-             <PanelLeftClose size={16} />
+             <ChevronLeft size={16} />
           </button>
           <h1 className="text-xl font-serif text-gray-900 leading-tight flex items-baseline gap-2">
             {format(currentDate, 'dd')}
@@ -303,7 +297,6 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
         </div>
       </div>
 
-      {/* Calendar */}
       {isCalendarOpen && (
          <div className="px-6 pb-6 pt-4 animate-in slide-in-from-top-2 fade-in border-b border-gray-100 bg-gray-50/50">
             <div className="flex items-center justify-between mb-4">
