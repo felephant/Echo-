@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { format, subDays } from 'date-fns';
-import { Settings, User, Layout, CheckSquare, Book } from 'lucide-react';
+import { Settings, User, Layout, CheckSquare, Book, AlertTriangle } from 'lucide-react';
 import { Tab, JournalEntry, DailyData, RecallItem, AppSettings, DeletedEntry, OverviewSectionConfig } from './types';
 import LeftColumn from './components/LeftColumn';
 import MiddleColumn from './components/MiddleColumn';
@@ -10,21 +11,9 @@ import TrashModal from './components/TrashModal';
 import CustomizeOverviewModal from './components/CustomizeOverviewModal';
 import { findAssociations, generateEntryReply } from './services/geminiService';
 import { translations, Language } from './utils/translations';
+import { getStoredDirectoryHandle, verifyPermission, readDailyJournal, appendToJournal, rewriteJournal } from './services/fileSystemService';
 
-// --- Mock Initial Data ---
-const TODAY_KEY = format(new Date(), 'yyyy-MM-dd');
-const YESTERDAY_KEY = format(subDays(new Date(), 1), 'yyyy-MM-dd');
-
-const MOCK_ENTRIES: Record<string, JournalEntry[]> = {
-  [TODAY_KEY]: [
-    { id: '1', content: 'Started the morning with a strong coffee and a 15-minute meditation. Felt surprisingly focused.', timestamp: new Date(new Date().setHours(8, 30)), source: 'obsidian', isImportant: false, isSaved: true },
-    { id: '2', content: 'Meeting with the design team went well. We decided to simplify the navigation structure.', timestamp: new Date(new Date().setHours(11, 15)), source: 'web-input', isImportant: true, isSaved: true },
-  ],
-  [YESTERDAY_KEY]: [
-     { id: '3', content: 'Reviewing the quarterly goals. Need to align with the marketing team.', timestamp: new Date(new Date(Date.now() - 86400000).setHours(14, 0)), source: 'web-input', isImportant: false, isSaved: true }
-  ]
-};
-
+// Mock Config for Overview
 const DEFAULT_OVERVIEW_CONFIG: OverviewSectionConfig[] = [
     { id: 'mood', label: 'Mood', visible: true, order: 0, prompt: "The overall mood of the day." },
     { id: 'stats', label: 'Statistics', visible: true, order: 1, prompt: "Calculate basic stats (count of entries, tasks completed if any)." },
@@ -36,10 +25,19 @@ const DEFAULT_OVERVIEW_CONFIG: OverviewSectionConfig[] = [
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.JOURNAL);
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [dataStore, setDataStore] = useState<Record<string, DailyData>>({});
+  
+  // Data Store now acts as a cache for the current view, but primary source is file system
+  const [dailyEntries, setDailyEntries] = useState<JournalEntry[]>([]);
+  const [dailySummary, setDailySummary] = useState<DailyData['summary'] | undefined>(undefined);
+  
   const [recallItems, setRecallItems] = useState<RecallItem[]>([]);
   const [isRecallLoading, setIsRecallLoading] = useState(false);
   
+  // File System State
+  const [fsHandle, setFsHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [isFsConnected, setIsFsConnected] = useState(false);
+  const [fsError, setFsError] = useState<string | null>(null);
+
   // Layout State
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -49,7 +47,6 @@ const App: React.FC = () => {
   const [isTrashOpen, setIsTrashOpen] = useState(false);
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
 
-  // Advanced State
   const [deletedEntries, setDeletedEntries] = useState<DeletedEntry[]>([]);
   const [overviewConfig, setOverviewConfig] = useState<OverviewSectionConfig[]>(DEFAULT_OVERVIEW_CONFIG);
   
@@ -57,15 +54,9 @@ const App: React.FC = () => {
     language: 'Chinese',
     theme: 'light',
     connections: {
-        todo: [
-            { id: '1', type: 'google-calendar', name: 'Google Calendar', detail: 'Primary', isConnected: false }
-        ],
-        journal: [
-             { id: '1', type: 'local', name: 'My Journal Folder', detail: 'Click to select...', isConnected: false }
-        ],
-        vault: [
-             { id: '1', type: 'local', name: 'My Knowledge Base', detail: 'Click to select...', isConnected: false }
-        ]
+        todo: [],
+        journal: [{ id: '1', type: 'local', name: 'Local Journal', detail: 'Not connected', isConnected: false }],
+        vault: []
     },
     responseStyles: []
   });
@@ -73,70 +64,94 @@ const App: React.FC = () => {
   const language = settings.language as Language;
   const t = translations[language];
 
-  // Initialize store with mock data
+  // --- File System Initialization ---
+
+  // 1. Load Handle from DB on Mount
   useEffect(() => {
-    setDataStore(prev => {
-      const newData = { ...prev };
-      Object.keys(MOCK_ENTRIES).forEach(key => {
-        if (!newData[key]) {
-          newData[key] = {
-            date: key,
-            entries: MOCK_ENTRIES[key] || [],
-          };
-        }
-      });
-      return newData;
-    });
+    const initFS = async () => {
+      const handle = await getStoredDirectoryHandle();
+      if (handle) {
+        setFsHandle(handle);
+        
+        // Update settings UI to reflect found handle
+        setSettings(prev => ({
+            ...prev,
+            connections: {
+                ...prev.connections,
+                journal: prev.connections.journal.map(c => c.type === 'local' ? { ...c, isConnected: true, detail: handle.name } : c)
+            }
+        }));
+
+        // Verify Permission immediately or wait for user interaction?
+        // Usually, we need to wait for a user click to re-verify if permission is gone.
+        // We will try to read in the next effect, and if it fails, show a "Reconnect" prompt.
+        const hasPerm = await verifyPermission(handle, true);
+        setIsFsConnected(hasPerm);
+      }
+    };
+    initFS();
   }, []);
 
-  const dateKey = format(currentDate, 'yyyy-MM-dd');
-  const currentDailyData = dataStore[dateKey] || { date: dateKey, entries: [] };
-
-  // Global Retro Logic
-  const loadGlobalRecall = async () => {
-    if (currentDailyData.entries.length > 0) {
-      const allContent = currentDailyData.entries.map(e => e.content).join(' ');
-      setIsRecallLoading(true);
-      const associations = await findAssociations(allContent, settings.language);
-      setRecallItems(associations);
-      setIsRecallLoading(false);
-    } else {
-      setRecallItems([]);
-    }
-  };
-
+  // 2. Load Entries when Date or Handle changes
   useEffect(() => {
-    if (recallItems.length === 0 && currentDailyData.entries.length > 0) {
-        // Only load initially if empty, do not react to entries changing for auto-refresh
-        const timer = setTimeout(loadGlobalRecall, 1000);
-        return () => clearTimeout(timer);
-    }
-  }, [dateKey]); // Changed dependency to just dateKey
+    const loadData = async () => {
+      if (!fsHandle) {
+        setDailyEntries([]); 
+        return;
+      }
+
+      if (!isFsConnected) {
+         // Try one more time silently (some browsers persist session permissions)
+         const hasPerm = await verifyPermission(fsHandle, true);
+         if (!hasPerm) return; // User needs to re-auth in settings
+         setIsFsConnected(true);
+      }
+
+      try {
+        const entries = await readDailyJournal(fsHandle, currentDate);
+        setDailyEntries(entries);
+        setFsError(null);
+      } catch (err) {
+        console.error("Failed to read journal:", err);
+        setFsError("Permission required or read error. Click Settings to reconnect.");
+        setIsFsConnected(false);
+      }
+    };
+    loadData();
+  }, [currentDate, fsHandle, isFsConnected]);
 
   // --- Handlers ---
 
   const handleAddEntry = async (content: string, source: JournalEntry['source'] = 'web-input') => {
     const isChat = source === 'web-input'; 
+    const timestamp = new Date();
     
     const newEntry: JournalEntry = {
       id: Date.now().toString(),
       content,
-      timestamp: new Date(),
+      timestamp,
       source: isChat ? 'chat' : source,
       isImportant: false,
-      isSaved: !isChat 
+      isSaved: !isChat // Chat entries visually appear unsaved first? No, for FS mode, let's just save immediately if not chat.
     };
 
-    setDataStore(prev => ({
-      ...prev,
-      [dateKey]: {
-        ...prev[dateKey],
-        entries: [...(prev[dateKey]?.entries || []), newEntry]
-      }
-    }));
+    // Optimistic UI Update
+    setDailyEntries(prev => [...prev, newEntry]);
 
+    if (!fsHandle) return; // Demo mode, data lost on refresh
+
+    try {
+        await appendToJournal(fsHandle, currentDate, newEntry);
+        // If chat, we might want to "save" it automatically for file persistence or keep the UI "unsaved" state
+        // For this MVP, we treat append as saved.
+        setDailyEntries(prev => prev.map(e => e.id === newEntry.id ? { ...e, isSaved: true } : e));
+    } catch (err) {
+        console.error("Failed to write entry", err);
+        setFsError("Failed to save entry.");
+    }
+
+    // AI Reply Logic
     if (isChat) {
-        // handleSearchAssociation(content); // Manual refresh preferred now
         const replyText = await generateEntryReply(content, settings.language);
         const replyEntry: JournalEntry = {
             id: (Date.now() + 1).toString(),
@@ -144,91 +159,75 @@ const App: React.FC = () => {
             timestamp: new Date(),
             source: 'ai-reply',
             isImportant: false,
-            isSaved: false
+            isSaved: true
         };
-
-        setDataStore(prev => ({
-            ...prev,
-            [dateKey]: {
-                ...prev[dateKey],
-                entries: [...(prev[dateKey]?.entries || []), replyEntry]
-            }
-        }));
+        
+        setDailyEntries(prev => [...prev, replyEntry]);
+        if (fsHandle) await appendToJournal(fsHandle, currentDate, replyEntry);
     }
   };
 
-  const handleSaveEntry = (id: string) => {
-    setDataStore(prev => ({
-      ...prev,
-      [dateKey]: {
-        ...prev[dateKey],
-        entries: prev[dateKey].entries.map(e => 
-          e.id === id ? { ...e, isSaved: true, source: e.source === 'chat' ? 'web-input' : e.source } : e
-        )
-      }
-    }));
+  const handleSaveEntry = async (id: string) => {
+    // In file system mode, entries are appended immediately usually.
+    // If we have "unsaved" chat entries, this just visually confirms them.
+    setDailyEntries(prev => prev.map(e => e.id === id ? { ...e, isSaved: true } : e));
   };
 
   const handleUnsaveEntry = (id: string) => {
-    setDataStore(prev => ({
-      ...prev,
-      [dateKey]: {
-        ...prev[dateKey],
-        entries: prev[dateKey].entries.map(e => 
-          e.id === id ? { ...e, isSaved: false, source: e.source === 'web-input' ? 'chat' : e.source } : e
-        )
-      }
-    }));
+     // Visual only
+    setDailyEntries(prev => prev.map(e => e.id === id ? { ...e, isSaved: false } : e));
   };
 
-  const handleDeleteEntry = (id: string) => {
-    const entryToDelete = currentDailyData.entries.find(e => e.id === id);
-    if (entryToDelete) {
-        setDeletedEntries(prev => [...prev, { ...entryToDelete, deletedAt: new Date(), originalDateKey: dateKey }]);
-        
-        setDataStore(prev => ({
-          ...prev,
-          [dateKey]: {
-            ...prev[dateKey],
-            entries: prev[dateKey].entries.filter(e => e.id !== id)
-          }
-        }));
+  const handleDeleteEntry = async (id: string) => {
+    const entryToDelete = dailyEntries.find(e => e.id === id);
+    if (!entryToDelete) return;
+
+    setDeletedEntries(prev => [...prev, { ...entryToDelete, deletedAt: new Date(), originalDateKey: format(currentDate, 'yyyy-MM-dd') }]);
+    
+    const newEntries = dailyEntries.filter(e => e.id !== id);
+    setDailyEntries(newEntries);
+
+    if (fsHandle) {
+        await rewriteJournal(fsHandle, currentDate, newEntries);
     }
   };
 
-  const handleRestoreEntry = (entry: DeletedEntry) => {
-     setDataStore(prev => {
-         const targetDateKey = entry.originalDateKey;
-         const existingData = prev[targetDateKey] || { date: targetDateKey, entries: [] };
-         // Remove deleted meta props
-         const { deletedAt, originalDateKey, ...rest } = entry;
-         const restoredEntry = rest as JournalEntry;
-         
-         return {
-             ...prev,
-             [targetDateKey]: {
-                 ...existingData,
-                 entries: [...existingData.entries, restoredEntry].sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime())
-             }
-         };
-     });
+  const handleEditEntry = async (id: string, newContent: string) => {
+    const newEntries = dailyEntries.map(e => e.id === id ? { ...e, content: newContent } : e);
+    setDailyEntries(newEntries);
+    if (fsHandle) {
+        await rewriteJournal(fsHandle, currentDate, newEntries);
+    }
+  };
+
+  const handleToggleImportant = async (id: string) => {
+    const newEntries = dailyEntries.map(e => e.id === id ? { ...e, isImportant: !e.isImportant } : e);
+    setDailyEntries(newEntries);
+    if (fsHandle) {
+        await rewriteJournal(fsHandle, currentDate, newEntries);
+    }
+  };
+
+  const handleRestoreEntry = async (entry: DeletedEntry) => {
+     const { deletedAt, originalDateKey, ...rest } = entry;
+     const restoredEntry = rest as JournalEntry;
+     
+     // Only restore if we are on the same day, otherwise it's complicated (need to read other file)
+     // For MVP, only restore to current view if dates match
+     const entryDateStr = format(restoredEntry.timestamp, 'yyyy-MM-dd');
+     const viewDateStr = format(currentDate, 'yyyy-MM-dd');
+
+     if (entryDateStr === viewDateStr) {
+         setDailyEntries(prev => [...prev, restoredEntry].sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime()));
+         if (fsHandle) {
+             await appendToJournal(fsHandle, currentDate, restoredEntry);
+         }
+     } else {
+         alert("Can only restore entries to the currently viewed date.");
+         return; 
+     }
+
      setDeletedEntries(prev => prev.filter(e => e.id !== entry.id));
-  };
-
-  const handlePermanentDelete = (id: string) => {
-      setDeletedEntries(prev => prev.filter(e => e.id !== id));
-  };
-
-  const handleEditEntry = (id: string, newContent: string) => {
-    setDataStore(prev => ({
-      ...prev,
-      [dateKey]: {
-        ...prev[dateKey],
-        entries: prev[dateKey].entries.map(e => 
-            e.id === id ? { ...e, content: newContent } : e
-        )
-      }
-    }));
   };
 
   const handleAiReply = async (entryId: string, content: string) => {
@@ -239,38 +238,15 @@ const App: React.FC = () => {
         timestamp: new Date(),
         source: 'ai-reply',
         isImportant: false,
-        isSaved: false
+        isSaved: true
     };
 
-    setDataStore(prev => ({
-        ...prev,
-        [dateKey]: {
-            ...prev[dateKey],
-            entries: [...(prev[dateKey]?.entries || []), replyEntry]
-        }
-    }));
+    setDailyEntries(prev => [...prev, replyEntry]);
+    if (fsHandle) await appendToJournal(fsHandle, currentDate, replyEntry);
   };
 
   const handleUpdateSummary = (summary: DailyData['summary']) => {
-    setDataStore(prev => ({
-      ...prev,
-      [dateKey]: {
-        ...prev[dateKey],
-        summary
-      }
-    }));
-  };
-
-  const handleToggleImportant = (id: string) => {
-    setDataStore(prev => ({
-      ...prev,
-      [dateKey]: {
-        ...prev[dateKey],
-        entries: prev[dateKey].entries.map(e => 
-          e.id === id ? { ...e, isImportant: !e.isImportant } : e
-        )
-      }
-    }));
+    setDailySummary(summary);
   };
 
   const handleSearchAssociation = async (content: string) => {
@@ -280,49 +256,35 @@ const App: React.FC = () => {
     setIsRecallLoading(false);
   };
 
-  const handleEntryUpdateFromRecall = (date: string, id: string, updates: Partial<JournalEntry>) => {
-    setDataStore(prev => {
-        const dayData = prev[date];
-        if (!dayData) return prev;
-        
-        // Find if entry exists
-        const entryIndex = dayData.entries.findIndex(e => e.id === id);
-        if (entryIndex === -1) return prev; 
-        
-        const updatedEntries = [...dayData.entries];
-        updatedEntries[entryIndex] = { ...updatedEntries[entryIndex], ...updates };
-        
-        return {
-            ...prev,
-            [date]: { ...dayData, entries: updatedEntries }
-        };
-    });
+  const handleRoam = () => {
+    const daysAgo = Math.floor(Math.random() * 30);
+    setCurrentDate(subDays(new Date(), daysAgo));
   };
 
-  const handleRoam = () => {
-    const validKeys = Object.keys(dataStore).filter(key => 
-      dataStore[key].entries && dataStore[key].entries.length > 0
-    );
-
-    if (validKeys.length > 0) {
-      let randomKey = validKeys[Math.floor(Math.random() * validKeys.length)];
-      if (validKeys.length > 1 && randomKey === dateKey) {
-         const otherKeys = validKeys.filter(k => k !== dateKey);
-         randomKey = otherKeys[Math.floor(Math.random() * otherKeys.length)];
-      }
-      setCurrentDate(new Date(randomKey));
-    } else {
-        const randomDays = Math.floor(Math.random() * 30);
-        setCurrentDate(subDays(new Date(), randomDays));
-    }
+  // Construct DailyData object for components
+  const currentDailyData: DailyData = {
+      date: format(currentDate, 'yyyy-MM-dd'),
+      entries: dailyEntries,
+      summary: dailySummary
   };
 
   return (
     <div className={`h-screen w-screen flex flex-col ${settings.theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} font-sans overflow-hidden transition-colors`}>
-      {/* 1. Global Navigation */}
+      {/* Header */}
       <header className={`relative h-14 flex items-center justify-between px-4 z-10 flex-shrink-0 bg-transparent`}>
-        <div className={`flex items-center gap-2 font-bold text-xl tracking-tight z-10 ${settings.theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-          Echo
+        <div className="flex items-center gap-2">
+            <div className={`font-bold text-xl tracking-tight z-10 ${settings.theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            Echo
+            </div>
+            {fsHandle && !isFsConnected && (
+                <button 
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="text-xs flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-1 rounded-full animate-pulse"
+                >
+                    <AlertTriangle size={10} />
+                    Reconnect Folder
+                </button>
+            )}
         </div>
         
         <nav className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -359,11 +321,10 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* 2. Main Page Layout */}
+      {/* Main Layout */}
       <main className={`flex-1 flex overflow-hidden p-3 gap-3 ${settings.theme === 'dark' ? 'bg-gray-950' : ''}`}>
         {activeTab === Tab.JOURNAL ? (
           <>
-            {/* Left Column (Floating Panel) */}
             <div className={`flex-shrink-0 transition-all duration-300 ease-in-out ${leftCollapsed ? 'w-14' : 'w-80'}`}>
                 <LeftColumn 
                 currentDate={currentDate} 
@@ -379,10 +340,9 @@ const App: React.FC = () => {
                 />
             </div>
 
-            {/* Middle Column (Floating Panel) */}
             <div className="flex-1 min-w-0">
                 <MiddleColumn 
-                entries={currentDailyData.entries}
+                entries={dailyEntries}
                 onAddEntry={handleAddEntry}
                 onSaveEntry={handleSaveEntry}
                 onUnsaveEntry={handleUnsaveEntry}
@@ -397,15 +357,13 @@ const App: React.FC = () => {
                 />
             </div>
 
-            {/* Right Column (Floating Panel) */}
             <div className={`flex-shrink-0 transition-all duration-300 ease-in-out ${rightCollapsed ? 'w-14' : 'w-80'}`}>
                 <RightColumn 
                 recallItems={recallItems}
                 isLoading={isRecallLoading}
                 language={language}
-                onRefresh={loadGlobalRecall}
+                onRefresh={() => {}} 
                 onAddEntry={handleAddEntry}
-                onEntryUpdate={handleEntryUpdateFromRecall}
                 isCollapsed={rightCollapsed}
                 onToggle={() => setRightCollapsed(!rightCollapsed)}
                 />
@@ -433,7 +391,7 @@ const App: React.FC = () => {
         onClose={() => setIsTrashOpen(false)}
         deletedEntries={deletedEntries}
         onRestore={handleRestoreEntry}
-        onPermanentDelete={handlePermanentDelete}
+        onPermanentDelete={(id) => setDeletedEntries(p => p.filter(e => e.id !== id))}
         onClearAll={() => setDeletedEntries([])}
         language={language}
       />

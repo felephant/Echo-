@@ -1,7 +1,9 @@
+
 import React, { useState } from 'react';
-import { X, Globe, Eye, Zap, Link as LinkIcon, Check, Plus, ChevronDown, ChevronUp, Edit2, Trash2, Calendar, BookOpen, Layers, Lock, ShieldCheck, Loader2, Folder, Save } from 'lucide-react';
+import { X, Globe, Link as LinkIcon, Check, Plus, ChevronDown, ChevronUp, Edit2, Trash2, Calendar, BookOpen, Layers, Folder, Save, AlertTriangle } from 'lucide-react';
 import { AppSettings, ResponseStyle, DataSource } from '../types';
 import { translations, Language } from '../utils/translations';
+import { selectDirectory } from '../services/fileSystemService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -17,13 +19,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState({ name: '', detail: '' });
   
-  // Auth Simulation State
   const [isAuthenticating, setIsAuthenticating] = useState<string | null>(null);
-
-  // Response Style State
-  const [isAddingStyle, setIsAddingStyle] = useState(false);
-  const [newStyleName, setNewStyleName] = useState('');
-  const [newStylePrompt, setNewStylePrompt] = useState('');
 
   if (!isOpen) return null;
   const t = translations[settings.language as Language].settings;
@@ -32,57 +28,44 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
 
   const handleConnectionClick = async (partition: 'todo' | 'journal' | 'vault', item: DataSource) => {
     if (item.isConnected) {
-        // Disconnect immediately
-        toggleConnection(partition, item.id);
+        // Disconnect logic
+        toggleConnection(partition, item.id, false);
         return;
     }
 
     // Connect Logic
     if (item.type === 'local') {
-        // Functional Local Connection using File System Access API
         try {
-            // @ts-ignore
-            if (window.showDirectoryPicker) {
-                // @ts-ignore
-                const handle = await window.showDirectoryPicker();
-                if (handle) {
-                    const newConnections = { ...settings.connections };
-                    newConnections[partition] = newConnections[partition].map(c => 
-                        c.id === item.id ? { 
-                            ...c, 
-                            isConnected: true, 
-                            detail: handle.name,
-                            fileHandle: handle 
-                        } : c
-                    );
-                    onUpdateSettings({ ...settings, connections: newConnections });
-                }
-            } else {
-                alert("This browser doesn't support local folder access. Feature simulated.");
-                // Fallback simulation for non-Chrome browsers
-                toggleConnection(partition, item.id);
+            const handle = await selectDirectory();
+            if (handle) {
+                const newConnections = { ...settings.connections };
+                newConnections[partition] = newConnections[partition].map(c => 
+                    c.id === item.id ? { 
+                        ...c, 
+                        isConnected: true, 
+                        detail: handle.name,
+                        fileHandle: handle // Store handle in memory state (won't persist to JSON, but managed by DB)
+                    } : c
+                );
+                onUpdateSettings({ ...settings, connections: newConnections });
             }
         } catch (err) {
-            console.log('User cancelled folder selection or API error', err);
+            console.error('Directory selection failed', err);
         }
-    } else if (item.type === 'google-drive' || item.type === 'google-calendar') {
-        // Simulate OAuth Flow for Demo
+    } else {
+        // Mock other types
         setIsAuthenticating(item.id);
         setTimeout(() => {
-             // In a real app, this would be an OAuth redirect
-            toggleConnection(partition, item.id);
+            toggleConnection(partition, item.id, true);
             setIsAuthenticating(null);
-        }, 1500);
-    } else {
-        // Simple toggle for others
-        toggleConnection(partition, item.id);
+        }, 1000);
     }
   };
 
-  const toggleConnection = (partition: 'todo' | 'journal' | 'vault', id: string) => {
+  const toggleConnection = (partition: 'todo' | 'journal' | 'vault', id: string, status: boolean) => {
       const newConnections = { ...settings.connections };
       newConnections[partition] = newConnections[partition].map(c => 
-          c.id === id ? { ...c, isConnected: !c.isConnected } : c
+          c.id === id ? { ...c, isConnected: status } : c
       );
       onUpdateSettings({ ...settings, connections: newConnections });
   };
@@ -96,20 +79,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
   const addMockConnection = (partition: 'journal' | 'vault') => {
       const newConnections = { ...settings.connections };
       const newId = Date.now().toString();
-      // Default to LOCAL for functional demo
       const newSource: DataSource = {
           id: newId,
           type: 'local', 
-          name: partition === 'journal' ? 'New Local Journal' : 'New Local Vault',
-          detail: 'Select folder...',
+          name: partition === 'journal' ? 'Local Journal' : 'Local Vault',
+          detail: 'Not connected',
           isConnected: false
       };
       newConnections[partition] = [...newConnections[partition], newSource];
       onUpdateSettings({ ...settings, connections: newConnections });
-      
-      // Auto enter edit mode
-      setEditingId(newId);
-      setEditValues({ name: newSource.name, detail: newSource.detail });
   };
 
   const startEditing = (item: DataSource) => {
@@ -120,51 +98,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
   const saveEditing = (partition: 'todo' | 'journal' | 'vault') => {
       const newConnections = { ...settings.connections };
       newConnections[partition] = newConnections[partition].map(c => 
-          c.id === editingId ? { ...c, name: editValues.name, detail: editValues.detail } : c
+          c.id === editingId ? { ...c, name: editValues.name } : c
       );
       onUpdateSettings({ ...settings, connections: newConnections });
       setEditingId(null);
   };
 
-  // --- Style Handlers ---
-
-  const handleAddStyle = () => {
-    if (!newStyleName || !newStylePrompt) return;
-    const newStyle: ResponseStyle = {
-      id: Date.now().toString(),
-      name: newStyleName,
-      prompt: newStylePrompt,
-      isActive: false
-    };
-    onUpdateSettings({ 
-      ...settings, 
-      responseStyles: [...settings.responseStyles, newStyle] 
-    });
-    setNewStyleName('');
-    setNewStylePrompt('');
-    setIsAddingStyle(false);
-  };
-
-  const toggleStyleActive = (id: string) => {
-    onUpdateSettings({
-      ...settings,
-      responseStyles: settings.responseStyles.map(s => ({
-        ...s,
-        isActive: s.id === id 
-      }))
-    });
-  };
-
-  const deleteStyle = (id: string) => {
-    onUpdateSettings({
-      ...settings,
-      responseStyles: settings.responseStyles.filter(s => s.id !== id)
-    });
-  };
-
   const renderConnectionItem = (item: DataSource, partition: 'todo' | 'journal' | 'vault') => {
       const isEditing = editingId === item.id;
-      const isDrive = item.type === 'google-drive';
       const isLocal = item.type === 'local';
       const isAuthLoading = isAuthenticating === item.id;
 
@@ -174,41 +115,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className={`w-8 h-8 rounded flex items-center justify-center font-bold text-xs flex-shrink-0 transition-all ${item.isConnected ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
                         {isEditing ? <Edit2 size={12}/> : (
-                            item.isConnected ? <ShieldCheck size={14} /> : (isDrive ? <Save size={14} /> : (isLocal ? <Folder size={14} /> : item.name[0]))
+                            item.isConnected ? <Check size={14} /> : <Folder size={14} />
                         )}
                     </div>
                     
                     {isEditing ? (
                         <div className="flex-1 space-y-3 mr-4">
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Source Name</label>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Name</label>
                                 <input 
-                                    className="w-full text-sm font-medium border-b border-gray-300 focus:border-blue-500 outline-none bg-transparent px-1 py-0.5 placeholder-gray-300"
+                                    className="w-full text-sm font-medium border-b border-gray-300 focus:border-blue-500 outline-none bg-transparent px-1 py-0.5"
                                     value={editValues.name}
                                     onChange={(e) => setEditValues({...editValues, name: e.target.value})}
-                                    placeholder="e.g. My Journal"
                                     autoFocus
                                 />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                                    {isLocal ? 'Folder Path (Read-Only View)' : 'URL / Path'}
-                                </label>
-                                <div className="flex items-center gap-2">
-                                    <input 
-                                        className="flex-1 text-xs text-gray-700 font-mono border-b border-gray-300 focus:border-blue-500 outline-none bg-transparent px-1 py-0.5 placeholder-gray-300"
-                                        value={editValues.detail}
-                                        onChange={(e) => setEditValues({...editValues, detail: e.target.value})}
-                                        disabled={isLocal} // Path is set by picking folder
-                                        placeholder={isLocal ? "Select folder via Connect..." : "https://..."}
-                                    />
-                                    {isDrive && (
-                                        <button className="flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-[10px] font-medium text-gray-600 transition-colors whitespace-nowrap">
-                                            <Folder size={10} />
-                                            Browse
-                                        </button>
-                                    )}
-                                </div>
                             </div>
                         </div>
                     ) : (
@@ -217,16 +137,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                                 <span className="font-medium text-gray-900 truncate">{item.name}</span>
                                 {item.isConnected && (
                                     <span className="text-[10px] bg-green-100 text-green-700 px-1.5 rounded-full font-medium whitespace-nowrap">
-                                        {isLocal ? 'Local Access' : 'Linked'}
+                                        Live
                                     </span>
                                 )}
                             </div>
                             <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate font-mono mt-0.5">
-                                {isLocal ? <Folder size={12} className="text-gray-400 flex-shrink-0" /> : <LinkIcon size={12} className="text-gray-400 flex-shrink-0" />}
-                                {item.detail ? (
-                                    <span className="text-gray-600">{item.detail}</span>
+                                <Folder size={12} className="text-gray-400 flex-shrink-0" />
+                                {item.isConnected ? (
+                                    <span className="text-gray-700 font-medium">{item.detail}</span>
                                 ) : (
-                                    <span className="italic text-gray-400">Not configured</span>
+                                    <span className="italic text-gray-400">No folder selected</span>
                                 )}
                             </div>
                         </div>
@@ -248,20 +168,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                             <button 
                                 onClick={() => handleConnectionClick(partition, item)}
                                 disabled={isAuthLoading}
-                                className={`text-xs font-medium hover:underline flex items-center gap-1 ${item.isConnected ? 'text-gray-400 hover:text-red-600' : 'text-blue-600'}`}
+                                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors border ${
+                                    item.isConnected 
+                                    ? 'border-gray-200 text-gray-500 hover:border-red-200 hover:text-red-600 hover:bg-red-50' 
+                                    : 'border-blue-200 text-blue-600 bg-blue-50 hover:bg-blue-100'
+                                }`}
                             >
-                                {isAuthLoading && <Loader2 size={10} className="animate-spin" />}
-                                {item.isConnected 
-                                    ? t.disconnect 
-                                    : (isLocal ? 'Pick Folder' : (isDrive ? 'Authorize' : t.connect))
-                                }
+                                {isAuthLoading ? '...' : (item.isConnected ? t.disconnect : (isLocal ? 'Select Folder' : t.connect))}
                             </button>
-                            <button 
-                                onClick={() => startEditing(item)}
-                                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                            >
-                                <Edit2 size={12} />
-                            </button>
+                            
+                            {!item.isConnected && (
+                                <button 
+                                    onClick={() => startEditing(item)}
+                                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                                >
+                                    <Edit2 size={12} />
+                                </button>
+                            )}
                             {(partition === 'journal' || partition === 'vault') && (
                                 <button 
                                     onClick={() => deleteConnection(partition, item.id)}
@@ -274,15 +197,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                     )}
                 </div>
             </div>
-            {/* Info footer */}
-            {isDrive && !item.isConnected && !isEditing && (
-                <div className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-100">
-                    Simulation Mode. Use "Local Folder" for real file access.
-                </div>
-            )}
-            {isLocal && !item.isConnected && !isEditing && (
-                <div className="text-[10px] text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-100">
-                    Connects to a real folder on your device.
+             {!item.isConnected && (
+                <div className="flex items-center gap-1 mt-2 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-100">
+                    <AlertTriangle size={10} />
+                    Data is stored in memory only. Connect a folder to save files.
                 </div>
             )}
         </div>
@@ -291,7 +209,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
           <h2 className="text-xl font-bold text-gray-900">{t.title}</h2>
           <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
@@ -300,8 +218,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
         </div>
         
         <div className="p-6 space-y-8 overflow-y-auto">
-          
-          {/* 1. Connections (Priority) */}
+          {/* Connections Section */}
           <div className="space-y-3">
              <div 
                 className="flex items-center justify-between text-gray-900 font-medium cursor-pointer"
@@ -315,19 +232,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
             </div>
 
             {isConnectionsOpen && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-200 border-l-2 border-gray-100 pl-4">
-                    
-                    {/* Partition: To-Do */}
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
-                            <Calendar size={12} />
-                            {t.sectionTodo}
-                        </div>
-                        <div className="space-y-2">
-                            {settings.connections.todo.map(item => renderConnectionItem(item, 'todo'))}
-                        </div>
-                    </div>
-
+                <div className="space-y-6 border-l-2 border-gray-100 pl-4">
                     {/* Partition: Journal */}
                     <div className="space-y-2">
                          <div className="flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider">
@@ -338,42 +243,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                         </div>
                         <div className="space-y-2">
                             {settings.connections.journal.map(item => renderConnectionItem(item, 'journal'))}
-                            <button 
-                                onClick={() => addMockConnection('journal')}
-                                className="w-full py-1.5 border border-dashed border-gray-300 rounded-lg text-xs text-gray-500 hover:text-gray-700 hover:border-gray-400 hover:bg-gray-50 flex items-center justify-center gap-2 transition-all"
-                            >
-                                <Plus size={12} />
-                                {t.addSource}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Partition: Vault */}
-                    <div className="space-y-2">
-                         <div className="flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider">
-                             <div className="flex items-center gap-2">
-                                <Layers size={12} />
-                                {t.sectionVault}
-                             </div>
-                        </div>
-                        <div className="space-y-2">
-                            {settings.connections.vault.map(item => renderConnectionItem(item, 'vault'))}
-                             <button 
-                                onClick={() => addMockConnection('vault')}
-                                className="w-full py-1.5 border border-dashed border-gray-300 rounded-lg text-xs text-gray-500 hover:text-gray-700 hover:border-gray-400 hover:bg-gray-50 flex items-center justify-center gap-2 transition-all"
-                            >
-                                <Plus size={12} />
-                                {t.addSource}
-                            </button>
                         </div>
                     </div>
                 </div>
             )}
           </div>
-          {/* ... Rest of modal ... */}
         </div>
         <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end flex-shrink-0">
-            <button onClick={onClose} className="px-5 py-2.5 bg-gray-900 hover:bg-black text-white rounded-lg text-sm font-medium transition-colors">
+            <button onClick={onClose} className="px-5 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-black transition-colors">
                 Done
             </button>
         </div>
