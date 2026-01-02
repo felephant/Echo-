@@ -13,7 +13,6 @@ import { findAssociations, generateEntryReply } from './services/geminiService';
 import { translations, Language } from './utils/translations';
 import { getStoredDirectoryHandle, verifyPermission, readDailyJournal, appendToJournal, rewriteJournal } from './services/fileSystemService';
 
-// Mock Config for Overview
 const DEFAULT_OVERVIEW_CONFIG: OverviewSectionConfig[] = [
     { id: 'mood', label: 'Mood', visible: true, order: 0, prompt: "The overall mood of the day." },
     { id: 'stats', label: 'Statistics', visible: true, order: 1, prompt: "Calculate basic stats (count of entries, tasks completed if any)." },
@@ -26,7 +25,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.JOURNAL);
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   
-  // Data Store now acts as a cache for the current view, but primary source is file system
+  // Data State - Now focused on current view from FS
   const [dailyEntries, setDailyEntries] = useState<JournalEntry[]>([]);
   const [dailySummary, setDailySummary] = useState<DailyData['summary'] | undefined>(undefined);
   
@@ -36,8 +35,7 @@ const App: React.FC = () => {
   // File System State
   const [fsHandle, setFsHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [isFsConnected, setIsFsConnected] = useState(false);
-  const [fsError, setFsError] = useState<string | null>(null);
-
+  
   // Layout State
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -64,27 +62,22 @@ const App: React.FC = () => {
   const language = settings.language as Language;
   const t = translations[language];
 
-  // --- File System Initialization ---
-
-  // 1. Load Handle from DB on Mount
+  // --- 1. Init File System on Mount ---
   useEffect(() => {
     const initFS = async () => {
       const handle = await getStoredDirectoryHandle();
       if (handle) {
         setFsHandle(handle);
-        
-        // Update settings UI to reflect found handle
+        // Sync settings UI
         setSettings(prev => ({
             ...prev,
             connections: {
                 ...prev.connections,
-                journal: prev.connections.journal.map(c => c.type === 'local' ? { ...c, isConnected: true, detail: handle.name } : c)
+                journal: prev.connections.journal.map(c => c.type === 'local' ? { ...c, isConnected: true, detail: handle.name, fileHandle: handle } : c)
             }
         }));
-
-        // Verify Permission immediately or wait for user interaction?
-        // Usually, we need to wait for a user click to re-verify if permission is gone.
-        // We will try to read in the next effect, and if it fails, show a "Reconnect" prompt.
+        
+        // Check permission silently
         const hasPerm = await verifyPermission(handle, true);
         setIsFsConnected(hasPerm);
       }
@@ -92,7 +85,7 @@ const App: React.FC = () => {
     initFS();
   }, []);
 
-  // 2. Load Entries when Date or Handle changes
+  // --- 2. Load Data when Date or Handle changes ---
   useEffect(() => {
     const loadData = async () => {
       if (!fsHandle) {
@@ -101,26 +94,20 @@ const App: React.FC = () => {
       }
 
       if (!isFsConnected) {
-         // Try one more time silently (some browsers persist session permissions)
+         // Try to verify one more time, mostly for page refresh scenarios where browser might remember
          const hasPerm = await verifyPermission(fsHandle, true);
-         if (!hasPerm) return; // User needs to re-auth in settings
+         if (!hasPerm) return; 
          setIsFsConnected(true);
       }
 
-      try {
-        const entries = await readDailyJournal(fsHandle, currentDate);
-        setDailyEntries(entries);
-        setFsError(null);
-      } catch (err) {
-        console.error("Failed to read journal:", err);
-        setFsError("Permission required or read error. Click Settings to reconnect.");
-        setIsFsConnected(false);
-      }
+      const entries = await readDailyJournal(fsHandle, currentDate);
+      setDailyEntries(entries);
     };
     loadData();
   }, [currentDate, fsHandle, isFsConnected]);
 
-  // --- Handlers ---
+
+  // --- CRUD Handlers ---
 
   const handleAddEntry = async (content: string, source: JournalEntry['source'] = 'web-input') => {
     const isChat = source === 'web-input'; 
@@ -132,25 +119,16 @@ const App: React.FC = () => {
       timestamp,
       source: isChat ? 'chat' : source,
       isImportant: false,
-      isSaved: !isChat // Chat entries visually appear unsaved first? No, for FS mode, let's just save immediately if not chat.
+      isSaved: true
     };
 
-    // Optimistic UI Update
+    // Optimistic update
     setDailyEntries(prev => [...prev, newEntry]);
 
-    if (!fsHandle) return; // Demo mode, data lost on refresh
-
-    try {
+    if (fsHandle && isFsConnected) {
         await appendToJournal(fsHandle, currentDate, newEntry);
-        // If chat, we might want to "save" it automatically for file persistence or keep the UI "unsaved" state
-        // For this MVP, we treat append as saved.
-        setDailyEntries(prev => prev.map(e => e.id === newEntry.id ? { ...e, isSaved: true } : e));
-    } catch (err) {
-        console.error("Failed to write entry", err);
-        setFsError("Failed to save entry.");
     }
 
-    // AI Reply Logic
     if (isChat) {
         const replyText = await generateEntryReply(content, settings.language);
         const replyEntry: JournalEntry = {
@@ -163,18 +141,16 @@ const App: React.FC = () => {
         };
         
         setDailyEntries(prev => [...prev, replyEntry]);
-        if (fsHandle) await appendToJournal(fsHandle, currentDate, replyEntry);
+        if (fsHandle && isFsConnected) await appendToJournal(fsHandle, currentDate, replyEntry);
     }
   };
 
   const handleSaveEntry = async (id: string) => {
-    // In file system mode, entries are appended immediately usually.
-    // If we have "unsaved" chat entries, this just visually confirms them.
+    // For FS mode, usually saved immediately, but if we had visual-only unsaved logic:
     setDailyEntries(prev => prev.map(e => e.id === id ? { ...e, isSaved: true } : e));
   };
 
   const handleUnsaveEntry = (id: string) => {
-     // Visual only
     setDailyEntries(prev => prev.map(e => e.id === id ? { ...e, isSaved: false } : e));
   };
 
@@ -187,7 +163,7 @@ const App: React.FC = () => {
     const newEntries = dailyEntries.filter(e => e.id !== id);
     setDailyEntries(newEntries);
 
-    if (fsHandle) {
+    if (fsHandle && isFsConnected) {
         await rewriteJournal(fsHandle, currentDate, newEntries);
     }
   };
@@ -195,7 +171,7 @@ const App: React.FC = () => {
   const handleEditEntry = async (id: string, newContent: string) => {
     const newEntries = dailyEntries.map(e => e.id === id ? { ...e, content: newContent } : e);
     setDailyEntries(newEntries);
-    if (fsHandle) {
+    if (fsHandle && isFsConnected) {
         await rewriteJournal(fsHandle, currentDate, newEntries);
     }
   };
@@ -203,7 +179,7 @@ const App: React.FC = () => {
   const handleToggleImportant = async (id: string) => {
     const newEntries = dailyEntries.map(e => e.id === id ? { ...e, isImportant: !e.isImportant } : e);
     setDailyEntries(newEntries);
-    if (fsHandle) {
+    if (fsHandle && isFsConnected) {
         await rewriteJournal(fsHandle, currentDate, newEntries);
     }
   };
@@ -212,19 +188,15 @@ const App: React.FC = () => {
      const { deletedAt, originalDateKey, ...rest } = entry;
      const restoredEntry = rest as JournalEntry;
      
-     // Only restore if we are on the same day, otherwise it's complicated (need to read other file)
-     // For MVP, only restore to current view if dates match
-     const entryDateStr = format(restoredEntry.timestamp, 'yyyy-MM-dd');
-     const viewDateStr = format(currentDate, 'yyyy-MM-dd');
-
-     if (entryDateStr === viewDateStr) {
+     // Only allow restore if on same day for simplicity in MVP
+     if (originalDateKey === format(currentDate, 'yyyy-MM-dd')) {
          setDailyEntries(prev => [...prev, restoredEntry].sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime()));
-         if (fsHandle) {
+         if (fsHandle && isFsConnected) {
              await appendToJournal(fsHandle, currentDate, restoredEntry);
          }
      } else {
-         alert("Can only restore entries to the currently viewed date.");
-         return; 
+         alert("Please navigate to the original date to restore this entry.");
+         return;
      }
 
      setDeletedEntries(prev => prev.filter(e => e.id !== entry.id));
@@ -242,7 +214,7 @@ const App: React.FC = () => {
     };
 
     setDailyEntries(prev => [...prev, replyEntry]);
-    if (fsHandle) await appendToJournal(fsHandle, currentDate, replyEntry);
+    if (fsHandle && isFsConnected) await appendToJournal(fsHandle, currentDate, replyEntry);
   };
 
   const handleUpdateSummary = (summary: DailyData['summary']) => {
@@ -261,7 +233,6 @@ const App: React.FC = () => {
     setCurrentDate(subDays(new Date(), daysAgo));
   };
 
-  // Construct DailyData object for components
   const currentDailyData: DailyData = {
       date: format(currentDate, 'yyyy-MM-dd'),
       entries: dailyEntries,
@@ -270,7 +241,6 @@ const App: React.FC = () => {
 
   return (
     <div className={`h-screen w-screen flex flex-col ${settings.theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} font-sans overflow-hidden transition-colors`}>
-      {/* Header */}
       <header className={`relative h-14 flex items-center justify-between px-4 z-10 flex-shrink-0 bg-transparent`}>
         <div className="flex items-center gap-2">
             <div className={`font-bold text-xl tracking-tight z-10 ${settings.theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
@@ -279,7 +249,7 @@ const App: React.FC = () => {
             {fsHandle && !isFsConnected && (
                 <button 
                     onClick={() => setIsSettingsOpen(true)}
-                    className="text-xs flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-1 rounded-full animate-pulse"
+                    className="text-xs flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-1 rounded-full animate-pulse border border-amber-200"
                 >
                     <AlertTriangle size={10} />
                     Reconnect Folder
@@ -321,7 +291,6 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Layout */}
       <main className={`flex-1 flex overflow-hidden p-3 gap-3 ${settings.theme === 'dark' ? 'bg-gray-950' : ''}`}>
         {activeTab === Tab.JOURNAL ? (
           <>
@@ -362,7 +331,7 @@ const App: React.FC = () => {
                 recallItems={recallItems}
                 isLoading={isRecallLoading}
                 language={language}
-                onRefresh={() => {}} 
+                onRefresh={() => {}}
                 onAddEntry={handleAddEntry}
                 isCollapsed={rightCollapsed}
                 onToggle={() => setRightCollapsed(!rightCollapsed)}

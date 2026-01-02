@@ -1,11 +1,12 @@
+
 import { JournalEntry } from '../types';
-import { format, parse } from 'date-fns';
+import { format } from 'date-fns';
 
 const DB_NAME = 'EchoJournalDB';
 const STORE_NAME = 'handles';
 const STORE_KEY = 'journal_directory_handle';
 
-// --- IndexedDB Helper ---
+// --- IndexedDB Helper to persist folder permission handle ---
 const getDb = async (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
@@ -42,22 +43,28 @@ export const getStoredDirectoryHandle = async (): Promise<FileSystemDirectoryHan
   });
 };
 
-// --- File System Logic ---
+// --- File System Operations ---
 
 export const selectDirectory = async (): Promise<FileSystemDirectoryHandle | null> => {
+  // @ts-ignore - TypeScript might not recognize showDirectoryPicker yet
+  if (!window.showDirectoryPicker) {
+      throw new Error("File System Access API not supported in this browser.");
+  }
+
   try {
-    // @ts-ignore - Trigger browser picker
+    // @ts-ignore
     const handle = await window.showDirectoryPicker({
-        id: 'journal-root',
+        id: 'echo-journal-root',
         mode: 'readwrite'
     });
     await storeDirectoryHandle(handle);
     return handle;
   } catch (error) {
-    if ((error as Error).name !== 'AbortError') {
-        console.error("Error selecting directory:", error);
+    // Propagate error unless it's a user cancellation
+    if ((error as Error).name === 'AbortError') {
+        return null;
     }
-    return null;
+    throw error;
   }
 };
 
@@ -74,15 +81,15 @@ export const verifyPermission = async (handle: FileSystemDirectoryHandle, readWr
   return false;
 };
 
-// --- Parsing & Formatting ---
+// --- Markdown Parsing & formatting ---
 
 const getFileName = (date: Date) => `${format(date, 'yyMMdd')}.md`;
 
+// Parse "- HH:mm [source] Content #tags"
 const parseMarkdown = (text: string, date: Date): JournalEntry[] => {
   const lines = text.split('\n');
   const entries: JournalEntry[] = [];
   
-  // Regex to match: "- 14:30 [source] Content" or "- 14:30 Content"
   const entryRegex = /^- (\d{2}:\d{2})(?: \[(.*?)\])? (.*)$/;
 
   lines.forEach((line, index) => {
@@ -94,16 +101,19 @@ const parseMarkdown = (text: string, date: Date): JournalEntry[] => {
         const timestamp = new Date(date);
         timestamp.setHours(hours, minutes, 0, 0);
 
+        const isImportant = content.includes('#important');
+        // Clean tags from content if desired, or keep them. Keeping them for now.
+
         entries.push({
-            id: `${date.getTime()}-${index}`, // Stable-ish ID based on order
+            id: `${date.getTime()}-${index}`, // Stable ID based on order
             timestamp,
             source: (sourceStr as JournalEntry['source']) || 'user',
             content: content.trim(),
-            isImportant: content.includes('#star') || content.includes('#important'),
+            isImportant,
             isSaved: true
         });
-    } else if (line.trim() && entries.length > 0) {
-        // Append multiline content to previous entry
+    } else if (line.trim() && entries.length > 0 && !line.startsWith('-')) {
+        // Append multiline content
         entries[entries.length - 1].content += '\n' + line.trim();
     }
   });
@@ -114,12 +124,11 @@ const parseMarkdown = (text: string, date: Date): JournalEntry[] => {
 const formatEntry = (entry: JournalEntry): string => {
   const timeStr = format(entry.timestamp, 'HH:mm');
   const sourceTag = entry.source && entry.source !== 'user' ? ` [${entry.source}]` : '';
-  const starTag = entry.isImportant ? ' #important' : '';
-  // Clean newlines to match indented list style if needed, but for now keep it simple
-  return `- ${timeStr}${sourceTag} ${entry.content}${starTag}`;
+  const importantTag = entry.isImportant && !entry.content.includes('#important') ? ' #important' : '';
+  return `- ${timeStr}${sourceTag} ${entry.content}${importantTag}`;
 };
 
-// --- CRUD Operations ---
+// --- CRUD ---
 
 export const readDailyJournal = async (handle: FileSystemDirectoryHandle, date: Date): Promise<JournalEntry[]> => {
     try {
@@ -129,7 +138,7 @@ export const readDailyJournal = async (handle: FileSystemDirectoryHandle, date: 
         const text = await file.text();
         return parseMarkdown(text, date);
     } catch (error) {
-        // File doesn't exist yet, which is fine
+        // File likely doesn't exist, return empty
         return [];
     }
 };
@@ -138,20 +147,18 @@ export const appendToJournal = async (handle: FileSystemDirectoryHandle, date: D
     const fileName = getFileName(date);
     const fileHandle = await handle.getFileHandle(fileName, { create: true });
     
-    // Create a writable stream
+    // Read current to append correctly
+    const file = await fileHandle.getFile();
+    const text = await file.text();
+    const needsNewline = text.length > 0 && !text.endsWith('\n');
+    
     // @ts-ignore
     const writable = await fileHandle.createWritable({ keepExistingData: true });
     
-    // Get current file size to append to end
-    const file = await fileHandle.getFile();
-    const currentText = await file.text();
-    
-    const newBlock = formatEntry(entry);
-    const prefix = currentText.length > 0 && !currentText.endsWith('\n') ? '\n' : '';
-    
+    // Move to end
     // @ts-ignore
-    await writable.write({ type: 'write', position: file.size, data: prefix + newBlock + '\n' });
-    // @ts-ignore
+    await writable.write({ type: 'write', position: file.size, data: (needsNewline ? '\n' : '') + formatEntry(entry) + '\n' });
+    
     await writable.close();
 };
 
@@ -166,30 +173,6 @@ export const rewriteJournal = async (handle: FileSystemDirectoryHandle, date: Da
 
     // @ts-ignore
     const writable = await fileHandle.createWritable();
-    await writable.write(fullText);
+    await writable.write(fullText + '\n');
     await writable.close();
-};
-
-export const searchAllJournals = async (handle: FileSystemDirectoryHandle, query: string): Promise<any[]> => {
-    const results = [];
-    // @ts-ignore
-    for await (const [name, entry] of handle.entries()) {
-        if (name.endsWith('.md') && entry.kind === 'file') {
-             const fileHandle = entry as FileSystemFileHandle;
-             const file = await fileHandle.getFile();
-             const text = await file.text();
-             if (text.toLowerCase().includes(query.toLowerCase())) {
-                 // Simple hit
-                 results.push({
-                     id: name,
-                     title: name.replace('.md', ''),
-                     snippet: text.substring(0, 100) + '...',
-                     date: '20' + name.replace('.md', '').replace(/(\d{2})(\d{2})(\d{2})/, '$1-$2-$3'), // rough parse
-                     type: 'journal',
-                     relevanceScore: 1
-                 });
-             }
-        }
-    }
-    return results;
 };
