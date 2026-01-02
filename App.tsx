@@ -26,11 +26,11 @@ const MOCK_ENTRIES: Record<string, JournalEntry[]> = {
 };
 
 const DEFAULT_OVERVIEW_CONFIG: OverviewSectionConfig[] = [
-    { id: 'summary', label: 'Summary', visible: true, order: 0, prompt: "Provide a concise summary of the day's events and thoughts, ending with an encouraging sentence." },
-    { id: 'mood', label: 'Mood', visible: true, order: 1, prompt: "The overall mood of the day." },
-    { id: 'stats', label: 'Statistics', visible: true, order: 2, prompt: "Calculate basic stats (count of entries, tasks completed if any)." },
-    { id: 'happiness', label: 'Happiness', visible: true, order: 3, prompt: "List 1-3 things that felt happy or positive based on the input." },
-    { id: 'keywords', label: 'Keywords', visible: true, order: 4, prompt: "3-5 key themes or topics from the day." }
+    { id: 'mood', label: 'Mood', visible: true, order: 0, prompt: "The overall mood of the day." },
+    { id: 'stats', label: 'Statistics', visible: true, order: 1, prompt: "Calculate basic stats (count of entries, tasks completed if any)." },
+    { id: 'happiness', label: 'Happiness', visible: true, order: 2, prompt: "List 1-3 things that felt happy or positive based on the input." },
+    { id: 'keywords', label: 'Keywords', visible: true, order: 3, prompt: "3-5 key themes or topics from the day." },
+    { id: 'summary', label: 'Summary', visible: true, order: 4, prompt: "Provide a concise summary of the day's events and thoughts, ending with an encouraging sentence." }
 ];
 
 const App: React.FC = () => {
@@ -61,10 +61,10 @@ const App: React.FC = () => {
             { id: '1', type: 'google-calendar', name: 'Google Calendar', detail: 'Primary', isConnected: false }
         ],
         journal: [
-             { id: '1', type: 'google-drive', name: 'Journal Vault (Drive)', detail: '/MyJournal', isConnected: false }
+             { id: '1', type: 'local', name: 'My Journal Folder', detail: 'Click to select...', isConnected: false }
         ],
         vault: [
-             { id: '1', type: 'google-drive', name: 'Knowledge Base (Drive)', detail: '/MyKnowledge', isConnected: false }
+             { id: '1', type: 'local', name: 'My Knowledge Base', detail: 'Click to select...', isConnected: false }
         ]
     },
     responseStyles: []

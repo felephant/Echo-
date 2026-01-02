@@ -1,3 +1,4 @@
+
 export interface JournalEntry {
   id: string;
   content: string;
@@ -73,6 +74,7 @@ export interface DataSource {
   name: string;
   detail: string; // e.g. path or url
   isConnected: boolean;
+  fileHandle?: any; // FileSystemDirectoryHandle
 }
 
 export interface AppSettings {

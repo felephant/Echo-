@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { RecallItem } from '../types';
-import { BookOpen, Calendar, ChevronDown, ChevronRight, Layers, FileText, Pin, EyeOff, X, RefreshCw, Eye, List, Heart, MessageSquare, PanelRight, PanelRightClose } from 'lucide-react';
+import { BookOpen, Calendar, ChevronDown, ChevronRight, Layers, FileText, Pin, EyeOff, X, RefreshCw, Eye, List, Heart, MessageSquare, PanelRight, PanelRightClose, ChevronUp } from 'lucide-react';
 import { translations, Language } from '../utils/translations';
 import { format } from 'date-fns';
 
@@ -17,8 +17,7 @@ interface RightColumnProps {
 const RightColumn: React.FC<RightColumnProps> = ({ 
     recallItems, isLoading, language, onRefresh, onAddEntry, isCollapsed, onToggle
 }) => {
-  // Filters now act more like tabs, but we support "both" conceptually if needed. 
-  // For the UI requested, we will treat them as toggles that can be active.
+  // Filters now act more like tabs
   const [activeTab, setActiveTab] = useState<'all' | 'journal' | 'vault'>('all');
   const [collapsedStates, setCollapsedStates] = useState<Set<string>>(new Set());
   
@@ -27,15 +26,17 @@ const RightColumn: React.FC<RightColumnProps> = ({
   const [hiddenItems, setHiddenItems] = useState<Set<string>>(new Set());
   const [removedKeywords, setRemovedKeywords] = useState<Set<string>>(new Set());
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
-  const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('list'); // Default to list for cleaner look
   
-  // Like and Comment State (Simulated Local Storage for Demo)
-  const [likes, setLikes] = useState<Record<string, string[]>>({}); // itemId -> ['260101']
+  // Inline expansion state instead of modal
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+
+  // Like and Comment State (Simulated)
+  const [likes, setLikes] = useState<Record<string, string[]>>({});
   const [comments, setComments] = useState<Record<string, {date: string, text: string}[]>>({});
   
-  // Modal State
-  const [selectedItem, setSelectedItem] = useState<RecallItem | null>(null);
-  const [commentInput, setCommentInput] = useState('');
+  // Comment Input for expanded item
+  const [commentInput, setCommentInput] = useState<Record<string, string>>({});
 
   const t = translations[language].right;
 
@@ -75,6 +76,13 @@ const RightColumn: React.FC<RightColumnProps> = ({
     setCollapsedStates(newSet);
   };
 
+  const toggleItemExpansion = (id: string) => {
+      const newSet = new Set(expandedItems);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      setExpandedItems(newSet);
+  };
+
   const togglePin = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     const newSet = new Set(localPinned);
@@ -109,22 +117,23 @@ const RightColumn: React.FC<RightColumnProps> = ({
       });
   };
 
-  const handleSubmitComment = () => {
-      if (!selectedItem || !commentInput.trim()) return;
+  const handleSubmitComment = (item: RecallItem) => {
+      const text = commentInput[item.id];
+      if (!text || !text.trim()) return;
       
       const todayStr = format(new Date(), 'yyyy-MM-dd HH:mm');
       
       // 1. Add to local comments state
       setComments(prev => ({
           ...prev,
-          [selectedItem.id]: [...(prev[selectedItem.id] || []), { date: todayStr, text: commentInput }]
+          [item.id]: [...(prev[item.id] || []), { date: todayStr, text: text }]
       }));
 
       // 2. Backlink to daily journal
-      const backlinkContent = `> 💬 **Comment on [${selectedItem.title}]:** ${commentInput}`;
+      const backlinkContent = `> 💬 **Comment on [${item.title}]:** ${text}`;
       onAddEntry(backlinkContent, 'user');
 
-      setCommentInput('');
+      setCommentInput(prev => ({ ...prev, [item.id]: '' }));
   };
 
   const keywords = Object.keys(groupedItems);
@@ -263,72 +272,120 @@ const RightColumn: React.FC<RightColumnProps> = ({
                         </div>
 
                         {!isKeywordCollapsed && (
-                            // Grid or List Container
-                            <div className={`${viewMode === 'card' ? 'grid grid-cols-2 gap-2' : 'space-y-2'} pl-2 ml-1.5 border-l-2 border-gray-100`}>
+                            // List Container
+                            <div className={`space-y-2 pl-2 ml-1.5 border-l-2 border-gray-100`}>
                                 {displayItems.map(item => {
                                     const isPinned = localPinned.has(item.id);
+                                    const isExpanded = expandedItems.has(item.id);
                                     const itemLikes = likes[item.id] || [];
+                                    const itemComments = comments[item.id] || [];
                                     const isJournal = item.type === 'journal';
                                     
                                     return (
                                         <div 
                                             key={item.id} 
                                             className={`
-                                                relative bg-white border border-gray-200 shadow-sm cursor-pointer transition-all group/item
+                                                relative bg-white border shadow-sm transition-all group/item
                                                 ${isJournal ? 'hover:border-blue-300' : 'hover:border-emerald-300'}
-                                                ${viewMode === 'list' ? 'p-2 rounded flex items-center justify-between' : 'p-3 rounded-lg flex flex-col justify-between h-full'}
+                                                ${isExpanded ? 'border-gray-300 ring-1 ring-gray-100' : 'border-gray-200'}
+                                                rounded-lg
                                             `}
-                                            onClick={() => setSelectedItem(item)}
                                         >
-                                            {viewMode === 'list' ? (
-                                                // --- List Item ---
-                                                <>
-                                                    <div className="flex items-center gap-2 overflow-hidden">
-                                                        {isJournal ? <FileText size={12} className="text-blue-500 flex-shrink-0" /> : <BookOpen size={12} className="text-emerald-500 flex-shrink-0" />}
-                                                        <span className="text-xs text-gray-700 truncate">{item.title}</span>
+                                            {/* Header Row (Always Visible) */}
+                                            <div 
+                                                className="p-3 cursor-pointer flex items-start justify-between"
+                                                onClick={() => toggleItemExpansion(item.id)}
+                                            >
+                                                <div className="flex gap-3 overflow-hidden">
+                                                     <div className={`mt-0.5 flex-shrink-0 ${isJournal ? 'text-blue-500' : 'text-emerald-500'}`}>
+                                                         {isJournal ? <FileText size={14} /> : <BookOpen size={14} />}
+                                                     </div>
+                                                     <div className="min-w-0">
+                                                         <h4 className="text-xs font-bold text-gray-800 leading-tight mb-0.5 truncate">{item.title}</h4>
+                                                         {!isExpanded && (
+                                                             <p className="text-[10px] text-gray-400 truncate">{item.snippet}</p>
+                                                         )}
+                                                     </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                                     {/* Pinned Icon */}
+                                                     {isPinned && <Pin size={12} className="text-amber-500 fill-current" />}
+                                                     
+                                                     {/* Expand Arrow */}
+                                                     {isExpanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-300" />}
+                                                </div>
+                                            </div>
+
+                                            {/* Expanded Content */}
+                                            {isExpanded && (
+                                                <div className="px-3 pb-3 pt-0 animate-in fade-in slide-in-from-top-1">
+                                                    <div className="h-px bg-gray-100 w-full mb-3"></div>
+                                                    
+                                                    {/* Full Snippet/Content */}
+                                                    <div className="prose prose-sm prose-gray max-w-none mb-4">
+                                                        <p className="text-xs text-gray-600 leading-relaxed">{item.fullContent || item.snippet}</p>
+                                                        <p className="text-[10px] text-gray-400 italic mt-2 text-right">{item.date}</p>
                                                     </div>
-                                                    <div className="flex items-center gap-2 flex-shrink-0">
-                                                            {isPinned && <Pin size={10} className="text-amber-500 fill-current" />}
-                                                            {itemLikes.length > 0 && (
-                                                                <div className="flex items-center gap-0.5 text-[9px] text-pink-500">
-                                                                    <Heart size={8} className="fill-current" />
-                                                                    {itemLikes.length}
-                                                                </div>
-                                                            )}
+
+                                                    {/* Actions Toolbar */}
+                                                    <div className="flex items-center justify-between pt-2 border-t border-gray-50">
+                                                        <div className="flex gap-2">
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); handleLike(item.id); }}
+                                                                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${itemLikes.length > 0 ? 'bg-pink-50 text-pink-600' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
+                                                            >
+                                                                <Heart size={10} className={itemLikes.length > 0 ? "fill-current" : ""} />
+                                                                {itemLikes.length || 'Like'}
+                                                            </button>
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); togglePin(e, item.id); }}
+                                                                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${isPinned ? 'bg-amber-50 text-amber-600' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
+                                                            >
+                                                                <Pin size={10} className={isPinned ? "fill-current" : ""} />
+                                                                {isPinned ? t.pin : t.pin}
+                                                            </button>
+                                                        </div>
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); hideItem(e, item.id); }}
+                                                            className="text-gray-300 hover:text-gray-500 p-1"
+                                                            title={t.hide}
+                                                        >
+                                                            <EyeOff size={12} />
+                                                        </button>
                                                     </div>
-                                                </>
-                                            ) : (
-                                                // --- Square Card Item ---
-                                                <>
-                                                    <div>
-                                                        <div className="flex justify-between items-start mb-2">
-                                                            {isJournal ? <FileText size={12} className="text-blue-500" /> : <BookOpen size={12} className="text-emerald-500" />}
-                                                            <div className="flex items-center gap-1">
-                                                                <button 
-                                                                    onClick={(e) => togglePin(e, item.id)}
-                                                                    className={`hover:bg-gray-100 rounded-full transition-colors ${isPinned ? 'text-amber-400' : 'text-gray-300 hover:text-amber-400'}`}
-                                                                >
-                                                                    <Pin size={12} className={isPinned ? "fill-current" : ""} />
-                                                                </button>
+
+                                                    {/* Comments Section */}
+                                                    <div className="mt-3 bg-gray-50 rounded p-2">
+                                                        {itemComments.length > 0 && (
+                                                            <div className="space-y-1 mb-2">
+                                                                {itemComments.map((c, i) => (
+                                                                    <div key={i} className="text-[10px] text-gray-600 border-l-2 border-blue-200 pl-2">
+                                                                        {c.text}
+                                                                    </div>
+                                                                ))}
                                                             </div>
+                                                        )}
+                                                        <div className="flex gap-1">
+                                                            <input 
+                                                                type="text"
+                                                                value={commentInput[item.id] || ''}
+                                                                onChange={(e) => setCommentInput(p => ({ ...p, [item.id]: e.target.value }))}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                placeholder={t.addComment}
+                                                                className="flex-1 text-[10px] bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                                                                onKeyDown={(e) => { if(e.key === 'Enter') { e.stopPropagation(); handleSubmitComment(item); }}}
+                                                            />
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); handleSubmitComment(item); }}
+                                                                disabled={!commentInput[item.id]?.trim()}
+                                                                className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                                                            >
+                                                                <MessageSquare size={10} />
+                                                            </button>
                                                         </div>
-                                                        <h4 className="text-xs font-bold text-gray-800 leading-tight mb-2 line-clamp-2">
-                                                            {item.title}
-                                                        </h4>
                                                     </div>
-                                                    <div className="mt-2">
-                                                        <div className="h-px bg-gray-100 mb-2"></div>
-                                                        <div className="flex items-center justify-between">
-                                                            <span className="text-[9px] text-gray-400 font-mono">{item.date}</span>
-                                                            {itemLikes.length > 0 && (
-                                                                <div className="flex items-center gap-0.5 text-[9px] text-pink-500">
-                                                                    <Heart size={8} className="fill-current" />
-                                                                    {itemLikes.length}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </>
+                                                </div>
                                             )}
                                         </div>
                                     );
@@ -340,115 +397,6 @@ const RightColumn: React.FC<RightColumnProps> = ({
             })
         )}
       </div>
-
-      {/* Item Content Modal */}
-      {selectedItem && (
-        <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col p-6 animate-in fade-in slide-in-from-right-4 rounded-2xl">
-            <div className="flex justify-between items-start mb-4">
-                <div>
-                     <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${selectedItem.type === 'journal' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                            {selectedItem.type === 'journal' ? t.journal : t.vault}
-                        </span>
-                        <span className="text-xs text-gray-400 font-mono">{selectedItem.date}</span>
-                    </div>
-                    <h3 className="text-lg font-bold text-gray-900 leading-tight">{selectedItem.title}</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                    <button 
-                        onClick={() => togglePin({ stopPropagation: () => {} } as any, selectedItem.id)}
-                        className={`p-2 rounded-full transition-colors ${localPinned.has(selectedItem.id) ? 'bg-amber-50 text-amber-500' : 'text-gray-400 hover:bg-gray-100'}`}
-                        title={t.pin}
-                    >
-                         <Pin size={18} className={localPinned.has(selectedItem.id) ? "fill-current" : ""} />
-                    </button>
-                    <button 
-                        onClick={() => setSelectedItem(null)}
-                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-                    >
-                        <X size={20} />
-                    </button>
-                </div>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto pr-2">
-                <div className="prose prose-sm prose-gray max-w-none mb-8">
-                    <p>{selectedItem.fullContent || selectedItem.snippet}</p>
-                    <p className="text-gray-400 italic mt-4">[Full content simulated for this demo]</p>
-                </div>
-
-                {/* Interaction Area */}
-                <div className="border-t border-gray-100 pt-4 space-y-4">
-                    {/* Likes */}
-                    <div>
-                        <button 
-                            onClick={() => handleLike(selectedItem.id)}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-pink-50 text-pink-600 rounded-lg text-xs font-bold hover:bg-pink-100 transition-colors mb-2"
-                        >
-                            <Heart size={14} className={(likes[selectedItem.id] || []).length > 0 ? "fill-current" : ""} />
-                            Like
-                            {(likes[selectedItem.id] || []).length > 0 && (
-                                <span className="opacity-80">({(likes[selectedItem.id] || []).length})</span>
-                            )}
-                        </button>
-                        
-                        {/* Vertical Like History */}
-                        {(likes[selectedItem.id] || []).length > 0 && (
-                            <div className="flex flex-col gap-1 max-h-24 overflow-y-auto">
-                                {(likes[selectedItem.id] || []).map((date, i) => (
-                                    <div key={i} className="text-[10px] text-gray-500 flex items-center gap-2 px-1 group/like-item">
-                                         <Heart size={8} className="text-pink-400 fill-current" />
-                                         <span>{t.likedIn} {date}</span>
-                                         <button 
-                                            onClick={() => handleRemoveLike(selectedItem.id, i)}
-                                            className="ml-auto opacity-0 group-hover/like-item:opacity-100 text-gray-300 hover:text-red-500 transition-opacity"
-                                            title="Remove"
-                                         >
-                                             <X size={10} />
-                                         </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Comments */}
-                    <div>
-                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">{t.comments}</h4>
-                        <div className="space-y-2 mb-3 max-h-40 overflow-y-auto">
-                            {(comments[selectedItem.id] || []).map((c, i) => (
-                                <div key={i} className="bg-gray-50 p-2 rounded text-xs text-gray-700">
-                                    <span className="text-gray-400 text-[10px] block mb-0.5">{c.date}</span>
-                                    {c.text}
-                                </div>
-                            ))}
-                            {(!comments[selectedItem.id] || comments[selectedItem.id].length === 0) && (
-                                <p className="text-xs text-gray-300 italic">No comments yet.</p>
-                            )}
-                        </div>
-                        <div className="flex gap-2">
-                            <input 
-                                type="text" 
-                                value={commentInput}
-                                onChange={(e) => setCommentInput(e.target.value)}
-                                placeholder={t.addComment}
-                                className="flex-1 bg-gray-50 border border-gray-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-blue-500"
-                                onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
-                            />
-                            <button 
-                                onClick={handleSubmitComment}
-                                disabled={!commentInput.trim()}
-                                className="p-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                            >
-                                <MessageSquare size={14} />
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-      )}
-
     </div>
   );
 };

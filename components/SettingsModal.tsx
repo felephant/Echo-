@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Globe, Eye, Zap, Link as LinkIcon, Check, Plus, ChevronDown, ChevronUp, Edit2, Trash2, Calendar, BookOpen, Layers, Lock, ShieldCheck, Loader2, FolderOpen } from 'lucide-react';
+import { X, Globe, Eye, Zap, Link as LinkIcon, Check, Plus, ChevronDown, ChevronUp, Edit2, Trash2, Calendar, BookOpen, Layers, Lock, ShieldCheck, Loader2, FolderOpen, HardDrive, Cloud } from 'lucide-react';
 import { AppSettings, ResponseStyle, DataSource } from '../types';
 import { translations, Language } from '../utils/translations';
 
@@ -30,23 +30,49 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
 
   // --- Connection Handlers ---
 
-  const handleConnectionClick = (partition: 'todo' | 'journal' | 'vault', item: DataSource) => {
+  const handleConnectionClick = async (partition: 'todo' | 'journal' | 'vault', item: DataSource) => {
     if (item.isConnected) {
         // Disconnect immediately
         toggleConnection(partition, item.id);
-    } else {
-        // Connect logic
-        if (item.type === 'google-drive' || item.type === 'google-calendar') {
-            // Simulate OAuth Flow
-            setIsAuthenticating(item.id);
-            setTimeout(() => {
-                toggleConnection(partition, item.id);
-                setIsAuthenticating(null);
-            }, 1500);
-        } else {
-            // Simple toggle for others
-            toggleConnection(partition, item.id);
+        return;
+    }
+
+    // Connect Logic
+    if (item.type === 'local') {
+        // Functional Local Connection using File System Access API
+        try {
+            if ('showDirectoryPicker' in window) {
+                // @ts-ignore - TypeScript might not know about showDirectoryPicker depending on env
+                const handle = await window.showDirectoryPicker();
+                if (handle) {
+                    const newConnections = { ...settings.connections };
+                    newConnections[partition] = newConnections[partition].map(c => 
+                        c.id === item.id ? { 
+                            ...c, 
+                            isConnected: true, 
+                            detail: handle.name,
+                            fileHandle: handle 
+                        } : c
+                    );
+                    onUpdateSettings({ ...settings, connections: newConnections });
+                }
+            } else {
+                alert("Your browser does not support local folder access. Please use Chrome, Edge, or Opera.");
+            }
+        } catch (err) {
+            console.log('User cancelled folder selection or API error', err);
         }
+    } else if (item.type === 'google-drive' || item.type === 'google-calendar') {
+        // Simulate OAuth Flow for Demo
+        setIsAuthenticating(item.id);
+        setTimeout(() => {
+             // In a real app, this would be an OAuth redirect
+            toggleConnection(partition, item.id);
+            setIsAuthenticating(null);
+        }, 1500);
+    } else {
+        // Simple toggle for others
+        toggleConnection(partition, item.id);
     }
   };
 
@@ -67,11 +93,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
   const addMockConnection = (partition: 'journal' | 'vault') => {
       const newConnections = { ...settings.connections };
       const newId = Date.now().toString();
+      // Default to LOCAL for functional demo
       const newSource: DataSource = {
           id: newId,
-          type: 'google-drive', // Default to Drive for this demo as user asked about it
-          name: partition === 'journal' ? 'New Drive Journal' : 'New Drive Vault',
-          detail: '/MyFolder',
+          type: 'local', 
+          name: partition === 'journal' ? 'New Local Journal' : 'New Local Vault',
+          detail: 'Select folder...',
           isConnected: false
       };
       newConnections[partition] = [...newConnections[partition], newSource];
@@ -135,6 +162,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
   const renderConnectionItem = (item: DataSource, partition: 'todo' | 'journal' | 'vault') => {
       const isEditing = editingId === item.id;
       const isDrive = item.type === 'google-drive';
+      const isLocal = item.type === 'local';
       const isAuthLoading = isAuthenticating === item.id;
 
       return (
@@ -142,7 +170,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className={`w-8 h-8 rounded flex items-center justify-center font-bold text-xs flex-shrink-0 transition-all ${item.isConnected ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                        {isEditing ? <Edit2 size={12}/> : (item.isConnected ? <ShieldCheck size={14} /> : (isDrive ? <Lock size={14} /> : item.name[0]))}
+                        {isEditing ? <Edit2 size={12}/> : (
+                            item.isConnected ? <ShieldCheck size={14} /> : (isDrive ? <Cloud size={14} /> : (isLocal ? <HardDrive size={14} /> : item.name[0]))
+                        )}
                     </div>
                     
                     {isEditing ? (
@@ -159,14 +189,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                             </div>
                             <div>
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                                    {isDrive ? 'Root Directory' : 'URL / Path'}
+                                    {isLocal ? 'Folder Path (Read-Only View)' : 'URL / Path'}
                                 </label>
                                 <div className="flex items-center gap-2">
                                     <input 
                                         className="flex-1 text-xs text-gray-700 font-mono border-b border-gray-300 focus:border-blue-500 outline-none bg-transparent px-1 py-0.5 placeholder-gray-300"
                                         value={editValues.detail}
                                         onChange={(e) => setEditValues({...editValues, detail: e.target.value})}
-                                        placeholder={isDrive ? "/Echo/Journal" : "https://..."}
+                                        disabled={isLocal} // Path is set by picking folder
+                                        placeholder={isLocal ? "Select folder via Connect..." : "https://..."}
                                     />
                                     {isDrive && (
                                         <button className="flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-[10px] font-medium text-gray-600 transition-colors whitespace-nowrap">
@@ -181,18 +212,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                         <div className="text-sm overflow-hidden min-w-0">
                             <div className="flex items-center gap-2">
                                 <span className="font-medium text-gray-900 truncate">{item.name}</span>
-                                {item.isConnected && isDrive && (
+                                {item.isConnected && (
                                     <span className="text-[10px] bg-green-100 text-green-700 px-1.5 rounded-full font-medium whitespace-nowrap">
-                                        Read/Write
+                                        {isLocal ? 'Local Access' : 'Linked'}
                                     </span>
                                 )}
                             </div>
                             <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate font-mono mt-0.5">
-                                {isDrive ? <FolderOpen size={12} className="text-gray-400 flex-shrink-0" /> : <LinkIcon size={12} className="text-gray-400 flex-shrink-0" />}
+                                {isLocal ? <HardDrive size={12} className="text-gray-400 flex-shrink-0" /> : <LinkIcon size={12} className="text-gray-400 flex-shrink-0" />}
                                 {item.detail ? (
                                     <span className="text-gray-600">{item.detail}</span>
                                 ) : (
-                                    <span className="italic text-gray-400">No path selected</span>
+                                    <span className="italic text-gray-400">Not configured</span>
                                 )}
                             </div>
                         </div>
@@ -219,7 +250,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                                 {isAuthLoading && <Loader2 size={10} className="animate-spin" />}
                                 {item.isConnected 
                                     ? t.disconnect 
-                                    : (isDrive ? 'Authorize' : t.connect)
+                                    : (isLocal ? 'Pick Folder' : (isDrive ? 'Authorize' : t.connect))
                                 }
                             </button>
                             <button 
@@ -240,10 +271,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                     )}
                 </div>
             </div>
-            {/* Info footer for Drive */}
+            {/* Info footer */}
             {isDrive && !item.isConnected && !isEditing && (
                 <div className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-100">
-                    Requires Google Drive authorization (scope: drive.file)
+                    Simulation Mode. Use "Local Folder" for real file access.
+                </div>
+            )}
+            {isLocal && !item.isConnected && !isEditing && (
+                <div className="text-[10px] text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-100">
+                    Connects to a real folder on your device.
                 </div>
             )}
         </div>
