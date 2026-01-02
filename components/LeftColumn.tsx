@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { format, subDays, isSameDay, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths, subMonths, isSameMonth } from 'date-fns';
 import { Calendar as CalendarIcon, RefreshCw, BarChart2, Smile, SlidersHorizontal, ChevronDown, ChevronUp, Heart, Sparkles, ChevronLeft, ChevronRight, Sidebar } from 'lucide-react';
@@ -16,11 +17,12 @@ interface LeftColumnProps {
   language: Language;
   isCollapsed?: boolean;
   onToggle?: () => void;
+  existingDates?: Set<string>;
 }
 
 const LeftColumn: React.FC<LeftColumnProps> = ({ 
   currentDate, onDateChange, dailyData, onUpdateSummary, onRoam, 
-  onOpenCustomize, overviewConfig, language, isCollapsed, onToggle
+  onOpenCustomize, overviewConfig, language, isCollapsed, onToggle, existingDates
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['summary']));
@@ -42,13 +44,6 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
     }
     setIsGenerating(false);
   };
-
-  // Auto-generate removed to support "Cancel automatic refresh"
-  // useEffect(() => {
-  //   if (!dailyData.summary && dailyData.entries.length > 0 && !isGenerating) {
-  //       handleGenerateSummary();
-  //   }
-  // }, [currentDate, dailyData.entries.length]); 
 
   const handleRoamClick = () => {
     if (onRoam) {
@@ -207,23 +202,28 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
     while (day <= endDate) {
         for (let i = 0; i < 7; i++) {
             formattedDate = format(day, 'd');
+            const isoDate = format(day, 'yyyy-MM-dd');
             const cloneDay = day;
             const isToday = isSameDay(day, new Date());
             const isSelected = isSameDay(day, currentDate);
             const isCurrentMonth = isSameMonth(day, monthStart);
+            const hasData = existingDates?.has(isoDate);
 
             days.push(
                 <button
                     key={day.toString()}
                     onClick={() => onDateChange(cloneDay)}
                     className={`
-                    aspect-square rounded-full flex items-center justify-center text-xs transition-all
+                    relative aspect-square rounded-full flex items-center justify-center text-xs transition-all
                     ${isSelected ? 'bg-gray-900 text-white font-bold shadow-sm' : 'hover:bg-gray-200'}
                     ${!isCurrentMonth ? 'text-gray-300' : 'text-gray-600'}
                     ${isToday && !isSelected ? 'border border-gray-900 text-gray-900 font-bold' : ''}
                     `}
                 >
                     {formattedDate}
+                    {hasData && !isSelected && (
+                        <div className="absolute bottom-1 w-1 h-1 bg-blue-500 rounded-full"></div>
+                    )}
                 </button>
             );
             day = addDays(day, 1);

@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { OverviewSectionConfig } from '../types';
 
@@ -116,18 +117,18 @@ export const generateEntryReply = async (entryContent: string, language: string 
   }
 };
 
-export const findAssociations = async (entryContent: string, language: string = 'English'): Promise<any[]> => {
+/**
+ * Replaced "Hallucination" mode with "Search Librarian" mode.
+ * Returns keywords to search the local file system.
+ */
+export const generateSearchKeywords = async (entryContent: string, language: string = 'English'): Promise<string[]> => {
   if (!apiKey) return [];
 
-  const prompt = `Based on the user's journal entry below, generate 4-6 fictional but realistic "past journal entries" or "Vault (knowledge base) articles" 
-  that would be semantically relevant to recall. 
-  Content should be in ${language}.
-  
-  IMPORTANT: Assign a 'keyword' to items to group them (e.g., 'Productivity', 'Meditation').
+  const prompt = `Analyze the user's journal entry below and extract 3-5 distinct, specific keywords or short phrases (in the same language as the entry) that would serve as good search terms to find related past entries in a personal journal database.
   
   User Entry: "${entryContent}"
   
-  Return a JSON array of items.`;
+  Return a JSON array of strings (the keywords).`;
 
   try {
     const response = await ai.models.generateContent({
@@ -137,25 +138,14 @@ export const findAssociations = async (entryContent: string, language: string = 
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              id: { type: Type.STRING },
-              title: { type: Type.STRING },
-              snippet: { type: Type.STRING, description: "A short preview of the content" },
-              fullContent: { type: Type.STRING, description: "The full content of the entry (simulated)" },
-              date: { type: Type.STRING, description: "YYYY-MM-DD" },
-              type: { type: Type.STRING, enum: ["journal", "vault"] },
-              keyword: { type: Type.STRING, description: "The shared topic/keyword for grouping" }
-            }
-          }
+          items: { type: Type.STRING }
         }
       }
     });
 
     return JSON.parse(response.text || '[]');
   } catch (error) {
-    console.error("Error finding associations:", error);
+    console.error("Error generating keywords:", error);
     return [];
   }
 };

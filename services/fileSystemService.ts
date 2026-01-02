@@ -1,5 +1,5 @@
 
-import { JournalEntry } from '../types';
+import { JournalEntry, RecallItem } from '../types';
 import { format } from 'date-fns';
 
 const DB_NAME = 'EchoJournalDB';
@@ -84,6 +84,81 @@ export const verifyPermission = async (handle: FileSystemDirectoryHandle, readWr
       console.error("Permission check failed", e);
       return false;
   }
+};
+
+// --- Helper: Scan for existing dates ---
+export const getJournalDates = async (handle: FileSystemDirectoryHandle): Promise<Set<string>> => {
+  const dates = new Set<string>();
+  // @ts-ignore
+  for await (const [name, entry] of handle.entries()) {
+      // Match files like 240101.md
+      if (entry.kind === 'file' && name.match(/^\d{6}\.md$/)) {
+           const yearStr = name.substring(0, 2);
+           const monthStr = name.substring(2, 4);
+           const dayStr = name.substring(4, 6);
+           
+           const fullYear = 2000 + parseInt(yearStr);
+           const dateStr = `${fullYear}-${monthStr}-${dayStr}`;
+           dates.add(dateStr);
+      }
+  }
+  return dates;
+};
+
+// --- Helper: Search files content ---
+export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keywords: string[]): Promise<RecallItem[]> => {
+    const results: RecallItem[] = [];
+    const limit = 20; // Hard limit to prevent browser freeze
+    const keywordSet = keywords.map(k => k.toLowerCase());
+
+    // @ts-ignore
+    for await (const [name, entry] of handle.entries()) {
+        if (entry.kind === 'file' && name.match(/^\d{6}\.md$/)) {
+             try {
+                 // @ts-ignore
+                 const file = await entry.getFile();
+                 const text = await file.text();
+                 const lowerText = text.toLowerCase();
+
+                 // Check if any keyword matches
+                 const matchedKeyword = keywordSet.find(k => lowerText.includes(k));
+                 
+                 if (matchedKeyword) {
+                    const year = 2000 + parseInt(name.substring(0, 2));
+                    const month = parseInt(name.substring(2, 4)) - 1;
+                    const day = parseInt(name.substring(4, 6));
+                    const dateObj = new Date(year, month, day);
+                    const dateStr = format(dateObj, 'yyyy-MM-dd');
+
+                    // Extract a relevant snippet around the keyword
+                    const idx = lowerText.indexOf(matchedKeyword);
+                    const snippetStart = Math.max(0, idx - 50);
+                    const snippetEnd = Math.min(text.length, idx + 100);
+                    let snippet = text.substring(snippetStart, snippetEnd);
+                    if(snippetStart > 0) snippet = "..." + snippet;
+                    if(snippetEnd < text.length) snippet = snippet + "...";
+
+                    results.push({
+                        id: name, // filename as ID
+                        title: format(dateObj, 'MMM do, yyyy'),
+                        snippet: snippet.replace(/\n/g, ' '),
+                        fullContent: text,
+                        date: dateStr,
+                        type: 'journal',
+                        keyword: matchedKeyword, // Group by the keyword that found it
+                        relevanceScore: 1
+                    });
+
+                    if (results.length >= limit) break;
+                 }
+             } catch (e) {
+                 console.warn(`Failed to read ${name}`, e);
+             }
+        }
+    }
+    
+    // Sort by date descending
+    return results.sort((a, b) => b.date.localeCompare(a.date));
 };
 
 // --- Markdown Parsing & formatting ---

@@ -9,9 +9,9 @@ import RightColumn from './components/RightColumn';
 import SettingsModal from './components/SettingsModal';
 import TrashModal from './components/TrashModal';
 import CustomizeOverviewModal from './components/CustomizeOverviewModal';
-import { findAssociations, generateEntryReply } from './services/geminiService';
+import { generateSearchKeywords, generateEntryReply } from './services/geminiService';
 import { translations, Language } from './utils/translations';
-import { getStoredDirectoryHandle, verifyPermission, readDailyJournal, appendToJournal, rewriteJournal } from './services/fileSystemService';
+import { getStoredDirectoryHandle, verifyPermission, readDailyJournal, appendToJournal, rewriteJournal, getJournalDates, searchJournalFiles } from './services/fileSystemService';
 
 const DEFAULT_OVERVIEW_CONFIG: OverviewSectionConfig[] = [
     { id: 'mood', label: 'Mood', visible: true, order: 0, prompt: "The overall mood of the day." },
@@ -25,9 +25,10 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.JOURNAL);
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   
-  // Data State - Now focused on current view from FS
+  // Data State
   const [dailyEntries, setDailyEntries] = useState<JournalEntry[]>([]);
   const [dailySummary, setDailySummary] = useState<DailyData['summary'] | undefined>(undefined);
+  const [existingDates, setExistingDates] = useState<Set<string>>(new Set());
   
   const [recallItems, setRecallItems] = useState<RecallItem[]>([]);
   const [isRecallLoading, setIsRecallLoading] = useState(false);
@@ -80,6 +81,10 @@ const App: React.FC = () => {
         // Check permission silently
         const hasPerm = await verifyPermission(handle, true);
         setIsFsConnected(hasPerm);
+
+        if (hasPerm) {
+            refreshCalendarIndicators(handle);
+        }
       }
     };
     initFS();
@@ -94,10 +99,11 @@ const App: React.FC = () => {
       }
 
       if (!isFsConnected) {
-         // Try to verify one more time, mostly for page refresh scenarios where browser might remember
+         // Try to verify one more time
          const hasPerm = await verifyPermission(fsHandle, true);
          if (!hasPerm) return; 
          setIsFsConnected(true);
+         refreshCalendarIndicators(fsHandle);
       }
 
       const entries = await readDailyJournal(fsHandle, currentDate);
@@ -106,6 +112,14 @@ const App: React.FC = () => {
     loadData();
   }, [currentDate, fsHandle, isFsConnected]);
 
+  const refreshCalendarIndicators = async (handle: FileSystemDirectoryHandle) => {
+      try {
+          const dates = await getJournalDates(handle);
+          setExistingDates(dates);
+      } catch (e) {
+          console.error("Failed to refresh calendar dates", e);
+      }
+  };
 
   // --- CRUD Handlers ---
 
@@ -120,7 +134,7 @@ const App: React.FC = () => {
       timestamp,
       source: isChat ? 'chat' : source,
       isImportant: false,
-      isSaved: false // Explicitly false so the Save button appears/user knows it's pending
+      isSaved: false 
     };
 
     // 2. Update UI Optimistically
@@ -130,15 +144,13 @@ const App: React.FC = () => {
     if (fsHandle && isFsConnected) {
         try {
             await appendToJournal(fsHandle, currentDate, newEntry);
-            // 4. On Success, mark as saved
+            // 4. On Success, mark as saved & refresh calendar
             setDailyEntries(prev => prev.map(e => e.id === newEntry.id ? { ...e, isSaved: true } : e));
+            setExistingDates(prev => new Set(prev).add(format(currentDate, 'yyyy-MM-dd')));
         } catch (err) {
             console.error("Failed to save entry to disk:", err);
-            // It remains isSaved: false, so user sees the Save button to retry
         }
     }
-    
-    // Removed Auto AI Reply block
   };
 
   const handleSaveEntry = async (id: string) => {
@@ -149,6 +161,7 @@ const App: React.FC = () => {
         try {
             await appendToJournal(fsHandle, currentDate, entryToSave);
             setDailyEntries(prev => prev.map(e => e.id === id ? { ...e, isSaved: true } : e));
+            setExistingDates(prev => new Set(prev).add(format(currentDate, 'yyyy-MM-dd')));
         } catch (err) {
             console.error("Failed to save manual entry:", err);
             alert("Failed to write to file. Please check folder permissions.");
@@ -174,6 +187,7 @@ const App: React.FC = () => {
 
     if (fsHandle && isFsConnected) {
         await rewriteJournal(fsHandle, currentDate, newEntries);
+        // If empty, remove from existing dates? For now, we keep it simple.
     }
   };
 
@@ -197,7 +211,6 @@ const App: React.FC = () => {
      const { deletedAt, originalDateKey, ...rest } = entry;
      const restoredEntry = rest as JournalEntry;
      
-     // Only allow restore if on same day for simplicity in MVP
      if (originalDateKey === format(currentDate, 'yyyy-MM-dd')) {
          setDailyEntries(prev => [...prev, restoredEntry].sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime()));
          if (fsHandle && isFsConnected) {
@@ -214,7 +227,6 @@ const App: React.FC = () => {
   const handleAiReply = async (entryId: string, content: string) => {
     const replyText = await generateEntryReply(content, settings.language);
     
-    // Create reply object
     const replyEntry: JournalEntry = {
         id: Date.now().toString(),
         content: replyText,
@@ -226,7 +238,6 @@ const App: React.FC = () => {
 
     setDailyEntries(prev => [...prev, replyEntry]);
     
-    // Auto-save the AI reply as well
     if (fsHandle && isFsConnected) {
         try {
             await appendToJournal(fsHandle, currentDate, replyEntry);
@@ -242,10 +253,29 @@ const App: React.FC = () => {
   };
 
   const handleSearchAssociation = async (content: string) => {
+    if (!fsHandle || !isFsConnected) {
+        alert("Please connect to a local folder to use Recall features.");
+        return;
+    }
+    
     setIsRecallLoading(true);
-    const associations = await findAssociations(content, settings.language);
-    setRecallItems(associations);
-    setIsRecallLoading(false);
+    
+    try {
+        // 1. AI generates search terms
+        const keywords = await generateSearchKeywords(content, settings.language);
+        
+        if (keywords.length === 0) {
+            setRecallItems([]);
+        } else {
+             // 2. Real File System Search
+             const results = await searchJournalFiles(fsHandle, keywords);
+             setRecallItems(results);
+        }
+    } catch (e) {
+        console.error("Recall failed", e);
+    } finally {
+        setIsRecallLoading(false);
+    }
   };
 
   const handleRoam = () => {
@@ -326,6 +356,7 @@ const App: React.FC = () => {
                 language={language}
                 isCollapsed={leftCollapsed}
                 onToggle={() => setLeftCollapsed(!leftCollapsed)}
+                existingDates={existingDates}
                 />
             </div>
 
