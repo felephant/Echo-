@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { RecallItem } from '../types';
-import { BookOpen, Calendar, ChevronDown, ChevronRight, Layers, FileText, Pin, X, RefreshCw, Eye, List, Heart, MessageSquare, Sidebar, ChevronLeft, Trash2 } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { RecallItem, RecallItemComment } from '../types';
+import { BookOpen, Calendar, ChevronDown, ChevronRight, Layers, FileText, Pin, X, RefreshCw, Eye, List, Heart, MessageSquare, Sidebar, Trash2 } from 'lucide-react';
 import { translations, Language } from '../utils/translations';
 import { format } from 'date-fns';
 
@@ -10,12 +10,13 @@ interface RightColumnProps {
   language: Language;
   onRefresh: () => void;
   onAddEntry: (content: string, source?: any) => void;
+  onEntryUpdate?: (date: string, id: string, updates: any) => void;
   isCollapsed?: boolean;
   onToggle?: () => void;
 }
 
 const RightColumn: React.FC<RightColumnProps> = ({ 
-    recallItems, isLoading, language, onRefresh, onAddEntry, isCollapsed, onToggle
+    recallItems, isLoading, language, onRefresh, onAddEntry, onEntryUpdate, isCollapsed, onToggle
 }) => {
   const [activeTab, setActiveTab] = useState<'all' | 'journal' | 'vault'>('all');
   const [collapsedStates, setCollapsedStates] = useState<Set<string>>(new Set());
@@ -29,10 +30,22 @@ const RightColumn: React.FC<RightColumnProps> = ({
   
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [likes, setLikes] = useState<Record<string, string[]>>({});
-  const [comments, setComments] = useState<Record<string, {date: string, text: string}[]>>({});
+  const [comments, setComments] = useState<Record<string, RecallItemComment[]>>({});
   const [commentInput, setCommentInput] = useState<Record<string, string>>({});
 
   const t = translations[language].right;
+
+  // Sync local state with props if provided
+  useEffect(() => {
+    const newLikes: Record<string, string[]> = {};
+    const newComments: Record<string, RecallItemComment[]> = {};
+    recallItems.forEach(item => {
+        if (item.likes) newLikes[item.id] = item.likes;
+        if (item.comments) newComments[item.id] = item.comments;
+    });
+    setLikes(prev => ({ ...prev, ...newLikes }));
+    setComments(prev => ({ ...prev, ...newComments }));
+  }, [recallItems]);
 
   const groupedItems = useMemo(() => {
     const hierarchy: Record<string, { journal: RecallItem[], vault: RecallItem[] }> = {};
@@ -87,19 +100,40 @@ const RightColumn: React.FC<RightColumnProps> = ({
       setRemovedKeywords(prev => new Set(prev).add(keyword));
   };
 
-  const handleLike = (id: string) => {
-      const todayStr = format(new Date(), 'yyMMdd');
-      setLikes(prev => ({ ...prev, [id]: [...(prev[id] || []), todayStr] }));
+  const handleLike = (item: RecallItem) => {
+      const todayStr = format(new Date(), 'yyyy-MM-dd HH:mm');
+      const newLikes = [...(likes[item.id] || []), todayStr];
+      setLikes(prev => ({ ...prev, [item.id]: newLikes }));
+      
+      if (onEntryUpdate) {
+        onEntryUpdate(item.date, item.id, { likes: newLikes });
+      }
+  };
+
+  const removeLike = (item: RecallItem, index: number) => {
+      const newLikes = (likes[item.id] || []).filter((_, i) => i !== index);
+      setLikes(prev => ({
+          ...prev,
+          [item.id]: newLikes
+      }));
+      if (onEntryUpdate) {
+        onEntryUpdate(item.date, item.id, { likes: newLikes });
+      }
   };
 
   const handleSubmitComment = (item: RecallItem) => {
       const text = commentInput[item.id];
       if (!text || !text.trim()) return;
       const todayStr = format(new Date(), 'yyyy-MM-dd HH:mm');
+      const newComment = { id: Date.now().toString(), date: todayStr, text: text };
+      const newCommentsList = [...(comments[item.id] || []), newComment];
       
-      setComments(prev => ({ ...prev, [item.id]: [...(prev[item.id] || []), { date: todayStr, text: text }] }));
-      onAddEntry(`> 💬 **Comment on [${item.title}]:** ${text}`, 'user');
+      setComments(prev => ({ ...prev, [item.id]: newCommentsList }));
       setCommentInput(prev => ({ ...prev, [item.id]: '' }));
+
+      if (onEntryUpdate) {
+        onEntryUpdate(item.date, item.id, { comments: newCommentsList });
+      }
   };
 
   const keywords = Object.keys(groupedItems);
@@ -185,8 +219,8 @@ const RightColumn: React.FC<RightColumnProps> = ({
                         </div>
 
                         {!isKeywordCollapsed && (
-                            // Clean list - removed border-l-2
-                            <div className={`space-y-2 pl-2 ml-1.5`}>
+                            // Removed border-l-2 and pl-2 ml-1.5 for a cleaner look
+                            <div className="space-y-3 mt-1">
                                 {displayItems.map(item => {
                                     const isPinned = localPinned.has(item.id);
                                     const isExpanded = expandedItems.has(item.id);
@@ -195,72 +229,109 @@ const RightColumn: React.FC<RightColumnProps> = ({
                                     const isJournal = item.type === 'journal';
                                     
                                     return (
-                                        <div key={item.id} className={`relative bg-white border shadow-sm transition-all group/item ${isJournal ? 'hover:border-blue-300' : 'hover:border-emerald-300'} ${isExpanded ? 'border-gray-300 ring-1 ring-gray-100' : 'border-gray-200'} rounded-lg`}>
+                                        <div key={item.id} className={`relative bg-white border shadow-sm transition-all group/item ${isExpanded ? 'border-blue-400 ring-1 ring-blue-100' : 'border-gray-200 hover:border-blue-300'} rounded-lg`}>
                                             <div className="p-3 cursor-pointer flex items-start justify-between" onClick={() => toggleItemExpansion(item.id)}>
-                                                <div className="flex gap-3 overflow-hidden">
+                                                <div className="flex gap-3 overflow-hidden items-start">
                                                      <div className={`mt-0.5 flex-shrink-0 ${isJournal ? 'text-blue-500' : 'text-emerald-500'}`}>
-                                                         {isJournal ? <FileText size={14} /> : <BookOpen size={14} />}
+                                                         {isJournal ? <FileText size={16} /> : <BookOpen size={16} />}
                                                      </div>
                                                      <div className="min-w-0">
-                                                         <h4 className="text-xs font-bold text-gray-800 leading-tight mb-0.5 truncate">{item.title}</h4>
-                                                         {!isExpanded && <p className="text-[10px] text-gray-400 truncate">{item.snippet}</p>}
+                                                         <h4 className="text-sm font-bold text-gray-800 leading-tight mb-1 truncate">{item.title}</h4>
+                                                         {!isExpanded && <p className="text-xs text-gray-400 truncate">{item.snippet}</p>}
                                                      </div>
                                                 </div>
+                                                {/* Header Actions: Pin & Expand */}
                                                 <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                                                     {isPinned && <Pin size={12} className="text-amber-500 fill-current" />}
-                                                     {isExpanded ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-300" />}
+                                                     <button 
+                                                        onClick={(e) => togglePin(e, item.id)}
+                                                        className="p-1 rounded-full hover:bg-gray-100 transition-colors"
+                                                     >
+                                                        <Pin size={14} className={isPinned ? "fill-current text-amber-500" : "text-gray-300"} />
+                                                     </button>
+                                                     {isExpanded ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-300" />}
                                                 </div>
                                             </div>
 
                                             {isExpanded && (
-                                                <div className="px-3 pb-3 pt-0 animate-in fade-in slide-in-from-top-1">
-                                                    <div className="h-px bg-gray-100 w-full mb-3"></div>
+                                                <div className="px-4 pb-4 pt-0 animate-in fade-in slide-in-from-top-1">
                                                     
                                                     {/* Full Content */}
-                                                    <div className="prose prose-sm prose-gray max-w-none mb-4">
-                                                        <p className="text-xs text-gray-600 leading-relaxed">{item.fullContent || item.snippet}</p>
-                                                        <p className="text-[10px] text-gray-400 italic mt-2 text-right">{item.date}</p>
+                                                    <div className="prose prose-sm prose-gray max-w-none mb-3">
+                                                        <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{item.fullContent || item.snippet}</p>
+                                                        <p className="text-xs text-gray-400 italic mt-3 text-right">{item.date}</p>
                                                     </div>
 
-                                                    {/* Actions Toolbar - Fixed Layout */}
-                                                    <div className="flex items-center justify-between pt-2 border-t border-gray-50">
-                                                        <div className="flex gap-2">
-                                                            <button 
-                                                                onClick={(e) => { e.stopPropagation(); handleLike(item.id); }} 
-                                                                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${itemLikes.length > 0 ? 'bg-pink-50 text-pink-600' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
-                                                            >
-                                                                <Heart size={10} className={itemLikes.length > 0 ? "fill-current" : ""} /> 
-                                                                {itemLikes.length || 'Like'}
-                                                            </button>
-                                                            <button 
-                                                                onClick={(e) => { e.stopPropagation(); togglePin(e, item.id); }} 
-                                                                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${isPinned ? 'bg-amber-50 text-amber-600' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
-                                                            >
-                                                                <Pin size={10} className={isPinned ? "fill-current" : ""} /> 
-                                                                {isPinned ? t.pin : t.pin}
-                                                            </button>
-                                                        </div>
+                                                    {/* Actions Toolbar */}
+                                                    <div className="flex items-center justify-between pt-3 border-t border-gray-100 mt-2">
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); handleLike(item); }} 
+                                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors border ${itemLikes.length > 0 ? 'bg-pink-50 text-pink-600 border-pink-100' : 'text-gray-500 border-transparent hover:bg-gray-100'}`}
+                                                        >
+                                                            <Heart size={14} className={itemLikes.length > 0 ? "fill-current" : ""} /> 
+                                                            Like
+                                                        </button>
+                                                        
                                                         {/* Delete Button */}
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); hideItem(e, item.id); }} 
-                                                            className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                            className="flex items-center justify-center p-1.5 text-gray-400 hover:text-red-500 rounded hover:bg-red-50 transition-colors"
                                                             title={t.hide}
                                                         >
-                                                            <Trash2 size={12} />
+                                                            <Trash2 size={16} />
                                                         </button>
                                                     </div>
 
-                                                    <div className="mt-3 bg-gray-50 rounded p-2">
+                                                    {/* Like History List */}
+                                                    {itemLikes.length > 0 && (
+                                                        <div className="mt-3 space-y-1">
+                                                            {itemLikes.map((date, idx) => (
+                                                                <div key={idx} className="flex items-center justify-between px-2 py-1.5 bg-gray-50 rounded border border-gray-100/50 group/like">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Heart size={10} className="text-pink-400 fill-current" />
+                                                                        <span className="text-xs text-gray-500">{t.likedIn} {date}</span>
+                                                                    </div>
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); removeLike(item, idx); }}
+                                                                        className="text-gray-300 hover:text-red-500 transition-colors p-0.5 opacity-0 group-hover/like:opacity-100"
+                                                                    >
+                                                                        <X size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Comments Section */}
+                                                    <div className="mt-4">
                                                         {itemComments.length > 0 && (
-                                                            <div className="space-y-1 mb-2">
+                                                            <div className="space-y-2 mb-3">
                                                                 {itemComments.map((c, i) => (
-                                                                    <div key={i} className="text-[10px] text-gray-600 border-l-2 border-blue-200 pl-2">{c.text}</div>
+                                                                    <div key={i} className="text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
+                                                                        <div className="flex justify-between text-gray-400 text-[10px] mb-1">
+                                                                            <span>{c.date}</span>
+                                                                        </div>
+                                                                        {c.text}
+                                                                    </div>
                                                                 ))}
                                                             </div>
                                                         )}
-                                                        <div className="flex gap-1">
-                                                            <input type="text" value={commentInput[item.id] || ''} onChange={(e) => setCommentInput(p => ({ ...p, [item.id]: e.target.value }))} onClick={(e) => e.stopPropagation()} placeholder={t.addComment} className="flex-1 text-[10px] bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400" onKeyDown={(e) => { if(e.key === 'Enter') { e.stopPropagation(); handleSubmitComment(item); }}} />
-                                                            <button onClick={(e) => { e.stopPropagation(); handleSubmitComment(item); }} disabled={!commentInput[item.id]?.trim()} className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"><MessageSquare size={10} /></button>
+                                                        <div className="flex gap-2">
+                                                            <input 
+                                                                type="text" 
+                                                                value={commentInput[item.id] || ''} 
+                                                                onChange={(e) => setCommentInput(p => ({ ...p, [item.id]: e.target.value }))} 
+                                                                onClick={(e) => e.stopPropagation()} 
+                                                                placeholder={t.addComment} 
+                                                                className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 transition-colors" 
+                                                                onKeyDown={(e) => { if(e.key === 'Enter') { e.stopPropagation(); handleSubmitComment(item); }}} 
+                                                            />
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); handleSubmitComment(item); }} 
+                                                                disabled={!commentInput[item.id]?.trim()} 
+                                                                className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                                                            >
+                                                                <MessageSquare size={14} />
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 </div>

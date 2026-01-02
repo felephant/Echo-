@@ -6,6 +6,8 @@ export interface JournalEntry {
   source: 'user' | 'web-input' | 'obsidian' | 'ai-reply' | 'chat';
   isImportant: boolean;
   isSaved?: boolean;
+  likes?: string[]; // Timestamp strings of when it was liked
+  comments?: RecallItemComment[];
 }
 
 export interface DeletedEntry extends JournalEntry {

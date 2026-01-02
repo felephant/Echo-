@@ -43,11 +43,12 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
     setIsGenerating(false);
   };
 
-  useEffect(() => {
-    if (!dailyData.summary && dailyData.entries.length > 0 && !isGenerating) {
-        handleGenerateSummary();
-    }
-  }, [currentDate, dailyData.entries.length]); 
+  // Auto-generate removed to support "Cancel automatic refresh"
+  // useEffect(() => {
+  //   if (!dailyData.summary && dailyData.entries.length > 0 && !isGenerating) {
+  //       handleGenerateSummary();
+  //   }
+  // }, [currentDate, dailyData.entries.length]); 
 
   const handleRoamClick = () => {
     if (onRoam) {

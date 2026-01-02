@@ -106,12 +106,12 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (recallItems.length === 0) {
-        // Initial load debounce
+    if (recallItems.length === 0 && currentDailyData.entries.length > 0) {
+        // Only load initially if empty, do not react to entries changing for auto-refresh
         const timer = setTimeout(loadGlobalRecall, 1000);
         return () => clearTimeout(timer);
     }
-  }, [currentDailyData.entries, dateKey, settings.language]);
+  }, [dateKey]); // Changed dependency to just dateKey
 
   // --- Handlers ---
 
@@ -136,7 +136,7 @@ const App: React.FC = () => {
     }));
 
     if (isChat) {
-        handleSearchAssociation(content); 
+        // handleSearchAssociation(content); // Manual refresh preferred now
         const replyText = await generateEntryReply(content, settings.language);
         const replyEntry: JournalEntry = {
             id: (Date.now() + 1).toString(),
@@ -280,6 +280,25 @@ const App: React.FC = () => {
     setIsRecallLoading(false);
   };
 
+  const handleEntryUpdateFromRecall = (date: string, id: string, updates: Partial<JournalEntry>) => {
+    setDataStore(prev => {
+        const dayData = prev[date];
+        if (!dayData) return prev;
+        
+        // Find if entry exists
+        const entryIndex = dayData.entries.findIndex(e => e.id === id);
+        if (entryIndex === -1) return prev; 
+        
+        const updatedEntries = [...dayData.entries];
+        updatedEntries[entryIndex] = { ...updatedEntries[entryIndex], ...updates };
+        
+        return {
+            ...prev,
+            [date]: { ...dayData, entries: updatedEntries }
+        };
+    });
+  };
+
   const handleRoam = () => {
     const validKeys = Object.keys(dataStore).filter(key => 
       dataStore[key].entries && dataStore[key].entries.length > 0
@@ -386,6 +405,7 @@ const App: React.FC = () => {
                 language={language}
                 onRefresh={loadGlobalRecall}
                 onAddEntry={handleAddEntry}
+                onEntryUpdate={handleEntryUpdateFromRecall}
                 isCollapsed={rightCollapsed}
                 onToggle={() => setRightCollapsed(!rightCollapsed)}
                 />
