@@ -1,0 +1,7 @@
+{
+  "name": "Echo 旁白",
+  "description": "A persistent, state-based AI journaling assistant with a three-column layout.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
