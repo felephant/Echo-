@@ -3,6 +3,7 @@ export interface JournalEntry {
   id: string;
   content: string;
   timestamp: Date;
+  hasTime?: boolean; // New field to track if time was explicit
   source: 'user' | 'web-input' | 'obsidian' | 'ai-reply' | 'chat';
   isImportant: boolean;
   isSaved?: boolean;

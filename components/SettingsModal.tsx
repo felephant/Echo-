@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { X, Globe, Eye, Zap, Link as LinkIcon, Check, Plus, ChevronDown, ChevronUp, Edit2, Trash2, Calendar, BookOpen, Layers, Lock, ShieldCheck, Loader2, Folder, Save, Monitor, Moon, Sun, Smartphone, Brain, Palette } from 'lucide-react';
-import { AppSettings, ResponseStyle, DataSource, AccentColor } from '../types';
+import { X, Link as LinkIcon, Check, Plus, ChevronDown, ChevronUp, Edit2, Trash2, BookOpen, Layers, Loader2, Folder, Brain } from 'lucide-react';
+import { AppSettings, ResponseStyle, DataSource } from '../types';
 import { translations, Language } from '../utils/translations';
 import { selectDirectory } from '../services/fileSystemService';
 
@@ -31,19 +31,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
 
   const toggleSection = (section: string) => {
       setExpandedSection(expandedSection === section ? null : section);
-  };
-
-  // --- Appearance Handlers ---
-  const handleLanguageChange = (lang: 'English' | 'Chinese') => {
-      onUpdateSettings({ ...settings, language: lang });
-  };
-
-  const handleThemeChange = (theme: 'light' | 'dark' | 'system') => {
-      onUpdateSettings({ ...settings, theme });
-  };
-
-  const handleAccentChange = (color: AccentColor) => {
-      onUpdateSettings({ ...settings, accentColor: color });
   };
 
   // --- Connection Handlers ---
@@ -157,10 +144,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
       const isAuthLoading = isAuthenticating === item.id;
 
       return (
-        <div key={item.id} className={`flex flex-col gap-2 p-3 border rounded-lg transition-colors ${item.isConnected ? 'border-green-200 bg-green-50/50' : 'border-gray-200'}`}>
+        <div key={item.id} className={`flex flex-col gap-2 p-3 border rounded-lg transition-colors ${item.isConnected ? 'border-green-200 dark:border-green-900 bg-green-50/50 dark:bg-green-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className={`w-8 h-8 rounded flex items-center justify-center font-bold text-xs flex-shrink-0 transition-all ${item.isConnected ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
+                    <div className={`w-8 h-8 rounded flex items-center justify-center font-bold text-xs flex-shrink-0 transition-all ${item.isConnected ? 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500'}`}>
                         {isEditing ? <Edit2 size={12}/> : (
                             item.isConnected ? <Check size={14} /> : <Folder size={14} />
                         )}
@@ -169,9 +156,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                     {isEditing ? (
                         <div className="flex-1 space-y-3 mr-4">
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Name</label>
+                                <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Name</label>
                                 <input 
-                                    className="w-full text-sm font-medium border-b border-gray-300 focus:border-blue-500 outline-none bg-transparent px-1 py-0.5"
+                                    className="w-full text-sm font-medium border-b border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none bg-transparent px-1 py-0.5 text-gray-900 dark:text-gray-100"
                                     value={editValues.name}
                                     onChange={(e) => setEditValues({...editValues, name: e.target.value})}
                                     autoFocus
@@ -181,19 +168,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                     ) : (
                         <div className="text-sm overflow-hidden min-w-0">
                             <div className="flex items-center gap-2">
-                                <span className="font-medium text-gray-900 truncate">{item.name}</span>
+                                <span className="font-medium text-gray-900 dark:text-gray-100 truncate">{item.name}</span>
                                 {item.isConnected && (
-                                    <span className="text-[10px] bg-green-100 text-green-700 px-1.5 rounded-full font-medium whitespace-nowrap">
+                                    <span className="text-[10px] bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400 px-1.5 rounded-full font-medium whitespace-nowrap">
                                         Live
                                     </span>
                                 )}
                             </div>
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate font-mono mt-0.5">
-                                <Folder size={12} className="text-gray-400 flex-shrink-0" />
+                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 truncate font-mono mt-0.5">
+                                <Folder size={12} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
                                 {item.isConnected ? (
-                                    <span className="text-gray-700 font-medium">{item.detail}</span>
+                                    <span className="text-gray-700 dark:text-gray-300 font-medium">{item.detail}</span>
                                 ) : (
-                                    <span className="italic text-gray-400">No folder selected</span>
+                                    <span className="italic text-gray-400 dark:text-gray-600">No folder selected</span>
                                 )}
                             </div>
                         </div>
@@ -203,10 +190,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                 <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                     {isEditing ? (
                         <>
-                            <button onClick={() => saveEditing(partition)} className="p-1.5 text-green-600 hover:bg-green-100 rounded">
+                            <button onClick={() => saveEditing(partition)} className="p-1.5 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/50 rounded">
                                 <Check size={14} />
                             </button>
-                            <button onClick={() => setEditingId(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded">
+                            <button onClick={() => setEditingId(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
                                 <X size={14} />
                             </button>
                         </>
@@ -217,8 +204,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                                 disabled={isAuthLoading}
                                 className={`cursor-pointer px-3 py-1.5 rounded text-xs font-medium transition-colors border shadow-sm ${
                                     item.isConnected 
-                                    ? 'border-gray-200 text-gray-500 hover:border-red-200 hover:text-red-600 hover:bg-red-50' 
-                                    : 'border-blue-200 text-blue-600 bg-blue-50 hover:bg-blue-100 active:scale-95'
+                                    ? 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-red-200 dark:hover:border-red-800 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20' 
+                                    : 'border-blue-200 dark:border-blue-900/50 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 active:scale-95'
                                 }`}
                             >
                                 {isAuthLoading ? <Loader2 size={12} className="animate-spin"/> : (item.isConnected ? t.disconnect : (isLocal ? 'Browse' : t.connect))}
@@ -227,7 +214,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                             {!item.isConnected && (
                                 <button 
                                     onClick={() => startEditing(item)}
-                                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                                    className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
                                 >
                                     <Edit2 size={12} />
                                 </button>
@@ -235,7 +222,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                             {(partition === 'journal' || partition === 'vault') && (
                                 <button 
                                     onClick={() => deleteConnection(partition, item.id)}
-                                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded"
+                                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                                 >
                                     <Trash2 size={12} />
                                 </button>
@@ -248,128 +235,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
       );
   };
 
-  const accentColors: { value: AccentColor; label: string; class: string }[] = [
-      { value: 'slate', label: 'Slate', class: 'bg-slate-800' },
-      { value: 'blue', label: 'Blue', class: 'bg-blue-600' },
-      { value: 'purple', label: 'Purple', class: 'bg-purple-600' },
-      { value: 'emerald', label: 'Emerald', class: 'bg-emerald-600' },
-      { value: 'amber', label: 'Amber', class: 'bg-amber-500' },
-      { value: 'rose', label: 'Rose', class: 'bg-rose-500' },
-  ];
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
-          <h2 className="text-xl font-bold text-gray-900">{t.title}</h2>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 transition-colors">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{t.title}</h2>
+          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors cursor-pointer">
             <X size={20} />
           </button>
         </div>
         
         <div className="p-6 space-y-6 overflow-y-auto">
           
-          {/* 1. Appearance Section (Restored) */}
+          {/* 1. Connections Section */}
           <div className="space-y-3">
              <div 
-                className="flex items-center justify-between text-gray-900 font-medium cursor-pointer select-none"
-                onClick={() => toggleSection('appearance')}
-             >
-                <div className="flex items-center gap-2">
-                    <Monitor size={18} className="text-gray-500" />
-                    {t.appearance} & {t.language}
-                </div>
-                {expandedSection === 'appearance' ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </div>
-            
-            {expandedSection === 'appearance' && (
-                <div className="space-y-4 border-l-2 border-gray-100 pl-4 animate-in slide-in-from-top-2 fade-in duration-200">
-                     <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{t.language}</label>
-                        <div className="flex bg-gray-100 p-1 rounded-lg">
-                            {['English', 'Chinese'].map((lang) => (
-                                <button
-                                    key={lang}
-                                    onClick={() => handleLanguageChange(lang as any)}
-                                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
-                                        settings.language === lang 
-                                        ? 'bg-white text-gray-900 shadow-sm' 
-                                        : 'text-gray-500 hover:text-gray-700'
-                                    }`}
-                                >
-                                    {lang === 'English' ? 'English' : '中文'}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Theme</label>
-                        <div className="grid grid-cols-3 gap-2">
-                            <button 
-                                onClick={() => handleThemeChange('light')}
-                                className={`flex items-center justify-center gap-2 py-2 rounded-lg border text-xs font-medium transition-all ${
-                                    settings.theme === 'light' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                                }`}
-                            >
-                                <Sun size={14} /> Light
-                            </button>
-                            <button 
-                                onClick={() => handleThemeChange('dark')}
-                                className={`flex items-center justify-center gap-2 py-2 rounded-lg border text-xs font-medium transition-all ${
-                                    settings.theme === 'dark' ? 'border-blue-500 bg-gray-800 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                                }`}
-                            >
-                                <Moon size={14} /> Dark
-                            </button>
-                            <button 
-                                onClick={() => handleThemeChange('system')}
-                                className={`flex items-center justify-center gap-2 py-2 rounded-lg border text-xs font-medium transition-all ${
-                                    settings.theme === 'system' ? 'border-blue-500 bg-gray-100 text-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                                }`}
-                            >
-                                <Smartphone size={14} /> System
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Accent Color</label>
-                        <div className="flex flex-wrap gap-2">
-                            {accentColors.map(color => (
-                                <button
-                                    key={color.value}
-                                    onClick={() => handleAccentChange(color.value)}
-                                    className={`w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center ${color.class} ${settings.accentColor === color.value ? 'border-gray-900 scale-110 shadow-sm' : 'border-transparent opacity-80 hover:opacity-100'}`}
-                                    title={color.label}
-                                >
-                                    {settings.accentColor === color.value && <Check size={14} className="text-white" />}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
-          </div>
-
-          <div className="w-full h-px bg-gray-100"></div>
-
-          {/* 2. Connections Section */}
-          <div className="space-y-3">
-             <div 
-                className="flex items-center justify-between text-gray-900 font-medium cursor-pointer select-none"
+                className="flex items-center justify-between text-gray-900 dark:text-gray-100 font-medium cursor-pointer select-none"
                 onClick={() => toggleSection('connections')}
              >
                 <div className="flex items-center gap-2">
-                    <LinkIcon size={18} className="text-gray-500" />
+                    <LinkIcon size={18} className="text-gray-500 dark:text-gray-400" />
                     {t.connections}
                 </div>
-                {expandedSection === 'connections' ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                {expandedSection === 'connections' ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
             </div>
 
             {expandedSection === 'connections' && (
-                <div className="space-y-6 border-l-2 border-gray-100 pl-4 animate-in slide-in-from-top-2 fade-in duration-200">
+                <div className="space-y-6 border-l-2 border-gray-100 dark:border-gray-800 pl-4 animate-in slide-in-from-top-2 fade-in duration-200">
                     <div className="space-y-2">
-                         <div className="flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider">
+                         <div className="flex items-center justify-between text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
                              <div className="flex items-center gap-2">
                                 <BookOpen size={12} />
                                 {t.sectionJournal}
@@ -381,7 +275,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                     </div>
 
                     <div className="space-y-2">
-                         <div className="flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider">
+                         <div className="flex items-center justify-between text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
                              <div className="flex items-center gap-2">
                                 <Layers size={12} />
                                 {t.sectionVault}
@@ -395,71 +289,73 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
             )}
           </div>
           
-          <div className="w-full h-px bg-gray-100"></div>
+          <div className="w-full h-px bg-gray-100 dark:bg-gray-800"></div>
 
-          {/* 3. Memory & Behavior Section (Restored) */}
+          {/* 2. Memory & Behavior Section */}
           <div className="space-y-3">
              <div 
-                className="flex items-center justify-between text-gray-900 font-medium cursor-pointer select-none"
+                className="flex items-center justify-between text-gray-900 dark:text-gray-100 font-medium cursor-pointer select-none"
                 onClick={() => toggleSection('memory')}
              >
                 <div className="flex items-center gap-2">
-                    <Brain size={18} className="text-gray-500" />
+                    <Brain size={18} className="text-gray-500 dark:text-gray-400" />
                     {t.memory}
                 </div>
-                {expandedSection === 'memory' ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                {expandedSection === 'memory' ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
             </div>
 
             {expandedSection === 'memory' && (
-                <div className="space-y-4 border-l-2 border-gray-100 pl-4 animate-in slide-in-from-top-2 fade-in duration-200">
+                <div className="space-y-4 border-l-2 border-gray-100 dark:border-gray-800 pl-4 animate-in slide-in-from-top-2 fade-in duration-200">
                      <div className="flex items-center justify-between">
-                         <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t.responseStyle}</label>
+                         <label className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">{t.responseStyle}</label>
                          <button 
                             onClick={() => setIsAddingStyle(true)}
-                            className="text-[10px] text-blue-600 font-medium hover:underline flex items-center gap-1"
+                            className="text-[10px] text-blue-600 dark:text-blue-400 font-medium hover:underline flex items-center gap-1"
                          >
                              <Plus size={10} /> {t.addStyle}
                          </button>
                      </div>
                      
                      {isAddingStyle && (
-                         <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                         <div className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 space-y-2">
                              <input 
-                                className="w-full text-xs p-2 border border-gray-300 rounded bg-white text-gray-900 focus:border-blue-500 focus:outline-none" 
+                                className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none" 
                                 placeholder={t.styleName}
                                 value={newStyleName}
                                 onChange={e => setNewStyleName(e.target.value)}
                              />
                              <textarea 
-                                className="w-full text-xs p-2 border border-gray-300 rounded bg-white text-gray-900 focus:border-blue-500 focus:outline-none" 
+                                className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none" 
                                 placeholder={t.stylePrompt}
                                 value={newStylePrompt}
                                 onChange={e => setNewStylePrompt(e.target.value)}
                              />
                              <div className="flex justify-end gap-2">
-                                 <button onClick={() => setIsAddingStyle(false)} className="text-xs text-gray-500">Cancel</button>
-                                 <button onClick={handleAddStyle} className="text-xs bg-blue-600 text-white px-2 py-1 rounded">Add</button>
+                                 <button onClick={() => setIsAddingStyle(false)} className="text-xs text-gray-500 dark:text-gray-400">Cancel</button>
+                                 <button onClick={handleAddStyle} className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700">Add</button>
                              </div>
                          </div>
                      )}
 
                      <div className="space-y-2">
                          {settings.responseStyles.length === 0 ? (
-                             <div className="text-sm text-gray-400 italic bg-gray-50 p-3 rounded-lg text-center">
+                             <div className="text-sm text-gray-400 dark:text-gray-500 italic bg-gray-50 dark:bg-gray-800/30 p-3 rounded-lg text-center">
                                  Default AI persona is active.
                              </div>
                          ) : (
                              settings.responseStyles.map(style => (
-                                 <div key={style.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
+                                 <div key={style.id} className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-gray-300 dark:hover:border-gray-600 transition-colors bg-white dark:bg-gray-800">
                                      <div className="flex items-center gap-3">
-                                         <div className={`w-2 h-2 rounded-full ${style.isActive ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                                         <span className="text-sm font-medium text-gray-700">{style.name}</span>
+                                         <div className={`w-2 h-2 rounded-full ${style.isActive ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
+                                         <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{style.name}</span>
                                      </div>
                                      <div className="flex items-center gap-2">
                                          <button 
                                             onClick={() => toggleStyleActive(style.id)}
                                             className={`text-xs px-2 py-1 rounded font-medium transition-colors ${
-                                                style.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                style.isActive 
+                                                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
+                                                : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                                             }`}
                                          >
                                              {style.isActive ? 'Active' : 'Enable'}
@@ -475,8 +371,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
           </div>
 
         </div>
-        <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end flex-shrink-0">
-            <button onClick={onClose} className="px-5 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-black transition-colors shadow-sm">
+        <div className="p-6 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex justify-end flex-shrink-0">
+            <button onClick={onClose} className="px-5 py-2.5 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-lg text-sm font-medium hover:bg-black dark:hover:bg-white transition-colors shadow-sm">
                 Done
             </button>
         </div>

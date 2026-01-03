@@ -46,7 +46,7 @@ export const getStoredDirectoryHandle = async (): Promise<FileSystemDirectoryHan
 // --- File System Operations ---
 
 export const selectDirectory = async (): Promise<FileSystemDirectoryHandle | null> => {
-  // @ts-ignore - TypeScript might not recognize showDirectoryPicker yet
+  // @ts-ignore - File System Access API
   if (!window.showDirectoryPicker) {
       throw new Error("File System Access API not supported in this browser.");
   }
@@ -60,10 +60,7 @@ export const selectDirectory = async (): Promise<FileSystemDirectoryHandle | nul
     await storeDirectoryHandle(handle);
     return handle;
   } catch (error) {
-    // Propagate error unless it's a user cancellation
-    if ((error as Error).name === 'AbortError') {
-        return null;
-    }
+    if ((error as Error).name === 'AbortError') return null;
     throw error;
   }
 };
@@ -72,13 +69,9 @@ export const verifyPermission = async (handle: FileSystemDirectoryHandle, readWr
   const options = { mode: readWrite ? 'readwrite' : 'read' };
   try {
     // @ts-ignore
-    if ((await handle.queryPermission(options)) === 'granted') {
-        return true;
-    }
+    if ((await handle.queryPermission(options)) === 'granted') return true;
     // @ts-ignore
-    if ((await handle.requestPermission(options)) === 'granted') {
-        return true;
-    }
+    if ((await handle.requestPermission(options)) === 'granted') return true;
     return false;
   } catch (e) {
       console.error("Permission check failed", e);
@@ -86,29 +79,110 @@ export const verifyPermission = async (handle: FileSystemDirectoryHandle, readWr
   }
 };
 
-// --- Helper: Scan for existing dates ---
+// --- Helpers ---
+
+const getFileName = (date: Date) => `${format(date, 'yyMMdd')}.md`;
+
+const formatEntry = (entry: JournalEntry): string => {
+  const sourceTag = entry.source && entry.source !== 'user' ? ` [${entry.source}]` : '';
+  const importantTag = entry.isImportant && !entry.content.includes('#important') ? ' #important' : '';
+  
+  if (entry.hasTime === false) {
+      return `- ${entry.content}${importantTag}`;
+  }
+  
+  const timeStr = format(entry.timestamp, 'HH:mm');
+  return `- ${timeStr}${sourceTag} ${entry.content}${importantTag}`;
+};
+
+const parseMarkdown = (text: string, date: Date): JournalEntry[] => {
+  const lines = text.split('\n');
+  const entries: JournalEntry[] = [];
+  
+  const timeRegex = /^- (\d{1,2}:\d{2})(?: \[(.*?)\])? (.*)$/;
+  const bulletRegex = /^[-*] (.*)$/;
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    const timeMatch = line.match(timeRegex);
+    if (timeMatch) {
+        const [_, timeStr, sourceStr, content] = timeMatch;
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        const timestamp = new Date(date);
+        timestamp.setHours(hours, minutes, 0, 0);
+
+        entries.push({
+            id: `${date.getTime()}-${index}`,
+            timestamp,
+            hasTime: true,
+            source: (sourceStr as JournalEntry['source']) || 'user',
+            content: content.trim(),
+            isImportant: content.includes('#important'),
+            isSaved: true
+        });
+        return;
+    } 
+
+    const bulletMatch = line.match(bulletRegex);
+    if (bulletMatch) {
+        const content = bulletMatch[1];
+        const timestamp = new Date(date);
+        timestamp.setHours(0, 0, 0, 0);
+
+        entries.push({
+            id: `${date.getTime()}-${index}`,
+            timestamp,
+            hasTime: false,
+            source: 'user',
+            content: content.trim(),
+            isImportant: content.includes('#important'),
+            isSaved: true
+        });
+        return;
+    }
+
+    if (entries.length > 0 && !line.startsWith('-') && !line.startsWith('*')) {
+        entries[entries.length - 1].content += '\n' + trimmed;
+    } else {
+        const timestamp = new Date(date);
+        timestamp.setHours(0, 0, 0, 0);
+
+        entries.push({
+            id: `${date.getTime()}-${index}`,
+            timestamp,
+            hasTime: false,
+            source: 'user',
+            content: trimmed,
+            isImportant: trimmed.includes('#important'),
+            isSaved: true
+        });
+    }
+  });
+
+  return entries;
+};
+
+// --- CRUD Operations ---
+
 export const getJournalDates = async (handle: FileSystemDirectoryHandle): Promise<Set<string>> => {
   const dates = new Set<string>();
   // @ts-ignore
   for await (const [name, entry] of handle.entries()) {
-      // Match files like 240101.md
       if (entry.kind === 'file' && name.match(/^\d{6}\.md$/)) {
-           const yearStr = name.substring(0, 2);
-           const monthStr = name.substring(2, 4);
-           const dayStr = name.substring(4, 6);
-           
-           const fullYear = 2000 + parseInt(yearStr);
-           const dateStr = `${fullYear}-${monthStr}-${dayStr}`;
-           dates.add(dateStr);
+           const year = 2000 + parseInt(name.substring(0, 2));
+           const month = name.substring(2, 4);
+           const day = name.substring(4, 6);
+           dates.add(`${year}-${month}-${day}`);
       }
   }
   return dates;
 };
 
-// --- Helper: Search files content ---
 export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keywords: string[], excludeDate?: Date): Promise<RecallItem[]> => {
     const results: RecallItem[] = [];
-    const limit = 50; // Increased limit as we will filter later
+    const limit = 50;
     const keywordSet = keywords.map(k => k.toLowerCase());
     const excludeFileName = excludeDate ? getFileName(excludeDate) : null;
 
@@ -122,7 +196,6 @@ export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keyw
                  const file = await entry.getFile();
                  const text = await file.text();
 
-                 // Parse the file to get clean entries (strips metadata)
                  const year = 2000 + parseInt(name.substring(0, 2));
                  const month = parseInt(name.substring(2, 4)) - 1;
                  const day = parseInt(name.substring(4, 6));
@@ -130,27 +203,13 @@ export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keyw
                  
                  const parsedEntries = parseMarkdown(text, dateObj);
 
-                 // Check each entry for matches
                  for (const journalEntry of parsedEntries) {
                     const lowerContent = journalEntry.content.toLowerCase();
-                    
-                    // Find ALL matching keywords
                     const matchedKeywords = keywordSet.filter(k => lowerContent.includes(k));
                     
                     if (matchedKeywords.length > 0) {
-                        const dateStr = format(dateObj, 'yyyy-MM-dd');
-                        
-                        // Calculate score based on number of unique keywords matched
-                        // Base score = match count
-                        // Bonus for longer keywords (implies specificity)
-                        let score = matchedKeywords.length;
-                        
                         let snippet = journalEntry.content;
-                        if (snippet.length > 150) {
-                            snippet = snippet.substring(0, 150) + "...";
-                        }
-
-                        // Use the most significant (longest) keyword for display category
+                        if (snippet.length > 150) snippet = snippet.substring(0, 150) + "...";
                         const primaryKeyword = matchedKeywords.sort((a,b) => b.length - a.length)[0];
 
                         results.push({
@@ -158,119 +217,25 @@ export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keyw
                             title: format(dateObj, 'MMM do, yyyy'),
                             snippet: snippet,
                             fullContent: journalEntry.content,
-                            date: dateStr,
+                            date: format(dateObj, 'yyyy-MM-dd'),
                             type: 'journal',
                             keyword: primaryKeyword, 
-                            relevanceScore: score 
+                            relevanceScore: matchedKeywords.length
                         });
                     }
                  }
-
                  if (results.length >= limit) break;
-
              } catch (e) {
                  console.warn(`Failed to read/parse ${name}`, e);
              }
         }
     }
     
-    // Sort by Relevance Score descending, then by Date descending
     return results.sort((a, b) => {
-        if (b.relevanceScore !== a.relevanceScore) {
-            return b.relevanceScore - a.relevanceScore;
-        }
+        if (b.relevanceScore !== a.relevanceScore) return b.relevanceScore - a.relevanceScore;
         return b.date.localeCompare(a.date);
     });
 };
-
-// --- Markdown Parsing & formatting ---
-
-const getFileName = (date: Date) => `${format(date, 'yyMMdd')}.md`;
-
-// Parse "- HH:mm [source] Content #tags"
-const parseMarkdown = (text: string, date: Date): JournalEntry[] => {
-  const lines = text.split('\n');
-  const entries: JournalEntry[] = [];
-  
-  // Regex to match standard strict format: "- 14:30 [source] Content" or "- 9:00 Content"
-  const timeRegex = /^- (\d{1,2}:\d{2})(?: \[(.*?)\])? (.*)$/;
-  // Regex to match generic list items: "- Content" or "* Content"
-  const bulletRegex = /^[-*] (.*)$/;
-
-  lines.forEach((line, index) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-
-    // 1. Try strict time match first
-    const timeMatch = line.match(timeRegex);
-    if (timeMatch) {
-        const [_, timeStr, sourceStr, content] = timeMatch;
-        const [hours, minutes] = timeStr.split(':').map(Number);
-        
-        const timestamp = new Date(date);
-        timestamp.setHours(hours, minutes, 0, 0);
-
-        entries.push({
-            id: `${date.getTime()}-${index}`, // Stable ID based on order
-            timestamp,
-            source: (sourceStr as JournalEntry['source']) || 'user',
-            content: content.trim(),
-            isImportant: content.includes('#important'),
-            isSaved: true // Entries read from disk are always "saved"
-        });
-        return;
-    } 
-
-    // 2. Try generic bullet match (treat as untimed entry, default to 00:00 or similar)
-    const bulletMatch = line.match(bulletRegex);
-    if (bulletMatch) {
-        const content = bulletMatch[1];
-        const timestamp = new Date(date);
-        timestamp.setHours(0, 0, 0, 0); // Default to start of day for untimed bullets
-
-        entries.push({
-            id: `${date.getTime()}-${index}`,
-            timestamp,
-            source: 'user',
-            content: content.trim(),
-            isImportant: content.includes('#important'),
-            isSaved: true
-        });
-        return;
-    }
-
-    // 3. Fallback: Plain text line
-    if (entries.length > 0 && !line.startsWith('-') && !line.startsWith('*')) {
-        // Append multiline content to previous entry
-        entries[entries.length - 1].content += '\n' + trimmed;
-    } else {
-        // Orphan text line at start of file? Create a generic entry.
-        const timestamp = new Date(date);
-        timestamp.setHours(0, 0, 0, 0);
-
-        entries.push({
-            id: `${date.getTime()}-${index}`,
-            timestamp,
-            source: 'user',
-            content: trimmed,
-            isImportant: trimmed.includes('#important'),
-            isSaved: true
-        });
-    }
-  });
-
-  return entries;
-};
-
-const formatEntry = (entry: JournalEntry): string => {
-  const timeStr = format(entry.timestamp, 'HH:mm');
-  const sourceTag = entry.source && entry.source !== 'user' ? ` [${entry.source}]` : '';
-  const importantTag = entry.isImportant && !entry.content.includes('#important') ? ' #important' : '';
-  // Ensure multiline content is indented or handled if necessary, but standard markdown list just needs the first line bulleted
-  return `- ${timeStr}${sourceTag} ${entry.content}${importantTag}`;
-};
-
-// --- CRUD ---
 
 export const readDailyJournal = async (handle: FileSystemDirectoryHandle, date: Date): Promise<JournalEntry[]> => {
     try {
@@ -279,33 +244,25 @@ export const readDailyJournal = async (handle: FileSystemDirectoryHandle, date: 
         const file = await fileHandle.getFile();
         const text = await file.text();
         return parseMarkdown(text, date);
-    } catch (error) {
-        // File likely doesn't exist, return empty
+    } catch {
         return [];
     }
 };
 
 export const appendToJournal = async (handle: FileSystemDirectoryHandle, date: Date, entry: JournalEntry) => {
     const fileName = getFileName(date);
-    
-    // 1. Get or Create File Handle
     const fileHandle = await handle.getFileHandle(fileName, { create: true });
     
-    // 2. Read existing content to safe-append
     let currentContent = "";
     try {
         const file = await fileHandle.getFile();
         currentContent = await file.text();
-    } catch (e) {
-        // File might be new
-    }
+    } catch {}
 
-    // 3. Prepare new content
     const entryText = formatEntry(entry);
     const separator = currentContent.length > 0 && !currentContent.endsWith('\n') ? '\n' : '';
     const newContent = currentContent + separator + entryText + '\n';
 
-    // 4. Write full content (Read-Modify-Write pattern is safer than append stream for simple usage)
     // @ts-ignore
     const writable = await fileHandle.createWritable();
     await writable.write(newContent);
