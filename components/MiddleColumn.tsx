@@ -1,6 +1,7 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Image as ImageIcon, Mic, MessageSquare, Search, Star, Save, Trash2, Edit2, X, Check, RotateCcw } from 'lucide-react';
-import { JournalEntry } from '../types';
+import { JournalEntry, AccentColor } from '../types';
 import { format } from 'date-fns';
 import { translations, Language } from '../utils/translations';
 
@@ -17,12 +18,22 @@ interface MiddleColumnProps {
   language: Language;
   onOpenTrash: () => void;
   trashCount: number;
+  accentColor?: AccentColor;
 }
+
+const ACCENT_STYLES: Record<AccentColor, { bg: string, text: string, border: string, btnHover: string }> = {
+    slate: { bg: 'bg-slate-800', text: 'text-slate-600', border: 'border-slate-500', btnHover: 'hover:bg-black' },
+    blue: { bg: 'bg-blue-600', text: 'text-blue-600', border: 'border-blue-500', btnHover: 'hover:bg-blue-700' },
+    purple: { bg: 'bg-purple-600', text: 'text-purple-600', border: 'border-purple-500', btnHover: 'hover:bg-purple-700' },
+    emerald: { bg: 'bg-emerald-600', text: 'text-emerald-600', border: 'border-emerald-500', btnHover: 'hover:bg-emerald-700' },
+    amber: { bg: 'bg-amber-600', text: 'text-amber-600', border: 'border-amber-500', btnHover: 'hover:bg-amber-700' },
+    rose: { bg: 'bg-rose-600', text: 'text-rose-600', border: 'border-rose-500', btnHover: 'hover:bg-rose-700' },
+};
 
 const MiddleColumn: React.FC<MiddleColumnProps> = ({ 
     entries, onAddEntry, onSaveEntry, onUnsaveEntry, onDeleteEntry, onEditEntry, 
     onSearchAssociation, onToggleImportant, onAiReply, language,
-    onOpenTrash, trashCount
+    onOpenTrash, trashCount, accentColor = 'slate'
 }) => {
   const [inputText, setInputText] = useState('');
   const [loadingReplyId, setLoadingReplyId] = useState<string | null>(null);
@@ -30,6 +41,7 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
   const [editContent, setEditContent] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const t = translations[language].middle;
+  const styles = ACCENT_STYLES[accentColor];
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -92,7 +104,7 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
             return (
               <div 
                   key={entry.id} 
-                  className={`group relative transition-colors ${isUnsavedVisual && !entry.isSaved ? 'pl-4' : 'pl-4 border-l-2 border-gray-100 hover:border-blue-500'}`}
+                  className={`group relative transition-colors ${isUnsavedVisual && !entry.isSaved ? 'pl-4' : `pl-4 border-l-2 border-gray-100 hover:${styles.border}`}`}
               >
                 {/* Timestamp & Source */}
                 <div className="flex items-center justify-between mb-1">
@@ -102,7 +114,7 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
                     </span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold ${
                       entry.source === 'ai-reply' ? 'bg-purple-100 text-purple-600' : 
-                      entry.source === 'chat' ? 'bg-blue-50 text-blue-500' :
+                      entry.source === 'chat' ? `bg-gray-100 ${styles.text}` :
                       'bg-gray-100 text-gray-500'
                     }`}>
                       {entry.source === 'chat' ? t.me : entry.source === 'ai-reply' ? t.ai : entry.source}
@@ -127,7 +139,7 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
                             <button onClick={cancelEditing} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded">
                                 <X size={14} />
                             </button>
-                            <button onClick={() => saveEdit(entry.id)} className="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">
+                            <button onClick={() => saveEdit(entry.id)} className={`p-1.5 ${styles.bg} text-white rounded opacity-90 hover:opacity-100`}>
                                 <Check size={14} />
                             </button>
                         </div>
@@ -148,10 +160,10 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
                              <button 
                                 onClick={() => handleRequestAiReply(entry.id, entry.content)}
                                 disabled={loadingReplyId === entry.id}
-                                className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-blue-600 transition-colors"
+                                className={`flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:${styles.text} transition-colors`}
                               >
                                 {loadingReplyId === entry.id ? (
-                                  <span className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></span>
+                                  <span className={`w-3 h-3 border-2 ${styles.border} border-t-transparent rounded-full animate-spin`}></span>
                                 ) : (
                                   <MessageSquare size={14} />
                                 )}
@@ -159,7 +171,7 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
                               </button>
                               <button 
                                 onClick={() => onSearchAssociation(entry.content)}
-                                className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-blue-600 transition-colors"
+                                className={`flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:${styles.text} transition-colors`}
                               >
                                 <Search size={14} />
                                 {t.recall}
@@ -182,7 +194,7 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
                               {entry.source === 'web-input' && (
                                 <button 
                                   onClick={() => onUnsaveEntry(entry.id)}
-                                  className="flex items-center gap-1.5 text-xs font-medium text-gray-400 hover:text-blue-600 transition-colors"
+                                  className={`flex items-center gap-1.5 text-xs font-medium text-gray-400 hover:${styles.text} transition-colors`}
                                 >
                                   <RotateCcw size={14} />
                                   {t.unsave}
@@ -201,7 +213,7 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
                          <>
                             <button 
                                 onClick={() => onSaveEntry(entry.id)}
-                                className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                                className={`flex items-center gap-1.5 text-xs font-medium ${styles.text} hover:opacity-80 transition-colors`}
                             >
                                 <Save size={14} />
                                 {t.save}
@@ -225,7 +237,7 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
 
       {/* Input Area */}
       <div className="sticky bottom-0 bg-white border-t border-gray-100 p-4 sm:p-6">
-        <div className="w-full relative shadow-sm rounded-xl border border-gray-300 bg-white focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all">
+        <div className="w-full relative shadow-sm rounded-xl border border-gray-300 bg-white focus-within:ring-2 focus-within:ring-gray-200 focus-within:border-gray-400 transition-all">
           <textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
@@ -248,7 +260,7 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
             <button
               onClick={handleSend}
               disabled={!inputText.trim()}
-              className="flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className={`flex items-center gap-2 ${styles.bg} ${styles.btnHover} text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all`}
             >
               <Send size={16} />
               {t.send}

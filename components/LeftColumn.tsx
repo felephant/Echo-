@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { format, subDays, isSameDay, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths, subMonths, isSameMonth } from 'date-fns';
+import { format, subDays, isSameDay, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths, subMonths, isSameMonth, setMonth, setYear, parseISO } from 'date-fns';
 import { Calendar as CalendarIcon, RefreshCw, BarChart2, Smile, SlidersHorizontal, ChevronDown, ChevronUp, Heart, Sparkles, ChevronLeft, ChevronRight, Sidebar } from 'lucide-react';
-import { DailyData, OverviewSectionConfig } from '../types';
+import { DailyData, OverviewSectionConfig, AccentColor } from '../types';
 import { generateDailySummary } from '../services/geminiService';
 import { translations, Language } from '../utils/translations';
 
@@ -18,17 +18,29 @@ interface LeftColumnProps {
   isCollapsed?: boolean;
   onToggle?: () => void;
   existingDates?: Set<string>;
+  accentColor?: AccentColor;
 }
+
+const ACCENT_STYLES: Record<AccentColor, { bg: string, text: string, ring: string, dot: string }> = {
+    slate: { bg: 'bg-slate-800', text: 'text-slate-800', ring: 'ring-slate-300', dot: 'bg-slate-500' },
+    blue: { bg: 'bg-blue-600', text: 'text-blue-600', ring: 'ring-blue-300', dot: 'bg-blue-500' },
+    purple: { bg: 'bg-purple-600', text: 'text-purple-600', ring: 'ring-purple-300', dot: 'bg-purple-500' },
+    emerald: { bg: 'bg-emerald-600', text: 'text-emerald-600', ring: 'ring-emerald-300', dot: 'bg-emerald-500' },
+    amber: { bg: 'bg-amber-600', text: 'text-amber-600', ring: 'ring-amber-300', dot: 'bg-amber-500' },
+    rose: { bg: 'bg-rose-600', text: 'text-rose-600', ring: 'ring-rose-300', dot: 'bg-rose-500' },
+};
 
 const LeftColumn: React.FC<LeftColumnProps> = ({ 
   currentDate, onDateChange, dailyData, onUpdateSummary, onRoam, 
-  onOpenCustomize, overviewConfig, language, isCollapsed, onToggle, existingDates
+  onOpenCustomize, overviewConfig, language, isCollapsed, onToggle, existingDates,
+  accentColor = 'slate'
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['summary']));
   const [isCalendarOpen, setIsCalendarOpen] = useState(true);
   const [viewDate, setViewDate] = useState(currentDate); 
   const t = translations[language].left;
+  const styles = ACCENT_STYLES[accentColor];
 
   useEffect(() => {
       setViewDate(currentDate);
@@ -52,6 +64,20 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
       const daysAgo = Math.floor(Math.random() * 30);
       onDateChange(subDays(new Date(), daysAgo));
     }
+  };
+
+  const handleMonthSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value; // YYYY-MM
+      if(val) {
+          const [year, month] = val.split('-').map(Number);
+          const newDate = new Date(viewDate);
+          newDate.setFullYear(year);
+          newDate.setMonth(month - 1);
+          newDate.setDate(1); // Default to 1st of month to avoid overflow issues
+          setViewDate(newDate);
+          // Optional: Auto-jump current selection to 1st of that month too? 
+          // onDateChange(newDate); // Uncomment if you want clicking month to also select that month's date
+      }
   };
 
   const toggleSection = (id: string) => {
@@ -215,14 +241,14 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
                     onClick={() => onDateChange(cloneDay)}
                     className={`
                     relative aspect-square rounded-full flex items-center justify-center text-xs transition-all
-                    ${isSelected ? 'bg-gray-900 text-white font-bold shadow-sm' : 'hover:bg-gray-200'}
+                    ${isSelected ? `${styles.bg} text-white font-bold shadow-sm` : 'hover:bg-gray-200'}
                     ${!isCurrentMonth ? 'text-gray-300' : 'text-gray-600'}
-                    ${isToday && !isSelected ? 'border border-gray-900 text-gray-900 font-bold' : ''}
+                    ${isToday && !isSelected ? `border border-gray-300 ${styles.text} font-bold` : ''}
                     `}
                 >
                     {formattedDate}
                     {hasData && !isSelected && (
-                        <div className="absolute bottom-1 w-1 h-1 bg-blue-500 rounded-full"></div>
+                        <div className={`absolute bottom-1 w-1 h-1 ${styles.dot} rounded-full`}></div>
                     )}
                 </button>
             );
@@ -300,14 +326,26 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
 
       {isCalendarOpen && (
          <div className="px-6 pb-6 pt-4 animate-in slide-in-from-top-2 fade-in border-b border-gray-100 bg-gray-50/50">
-            <div className="flex items-center justify-between mb-4">
-                <button onClick={prevMonth} className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600">
+            <div className="flex items-center justify-between mb-4 relative">
+                <button onClick={prevMonth} className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 z-10">
                     <ChevronLeft size={16} />
                 </button>
-                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
-                    {format(viewDate, 'MMMM yyyy')}
-                </span>
-                <button onClick={nextMonth} className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600">
+                
+                {/* Interactive Month Label with Hidden Input */}
+                <div className="relative group cursor-pointer">
+                    <span className="text-xs font-bold text-gray-700 uppercase tracking-wide group-hover:text-blue-600 transition-colors flex items-center gap-1">
+                        {format(viewDate, 'MMMM yyyy')}
+                        <ChevronDown size={10} className="text-gray-400 group-hover:text-blue-600" />
+                    </span>
+                    <input 
+                        type="month" 
+                        value={format(viewDate, 'yyyy-MM')}
+                        onChange={handleMonthSelect}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                    />
+                </div>
+
+                <button onClick={nextMonth} className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 z-10">
                     <ChevronRight size={16} />
                 </button>
             </div>
@@ -336,7 +374,7 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
                 <button 
                   onClick={handleGenerateSummary}
                   disabled={isGenerating}
-                  className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  className={`text-xs ${styles.text} hover:opacity-80 flex items-center gap-1`}
                 >
                   {isGenerating ? <RefreshCw className="animate-spin" size={12} /> : <RefreshCw size={12} />}
                   {dailyData.summary ? t.refresh : t.generate}

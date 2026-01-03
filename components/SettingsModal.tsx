@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { X, Globe, Eye, Zap, Link as LinkIcon, Check, Plus, ChevronDown, ChevronUp, Edit2, Trash2, Calendar, BookOpen, Layers, Lock, ShieldCheck, Loader2, Folder, Save, Monitor, Moon, Sun, Smartphone, Brain } from 'lucide-react';
-import { AppSettings, ResponseStyle, DataSource } from '../types';
+import { X, Globe, Eye, Zap, Link as LinkIcon, Check, Plus, ChevronDown, ChevronUp, Edit2, Trash2, Calendar, BookOpen, Layers, Lock, ShieldCheck, Loader2, Folder, Save, Monitor, Moon, Sun, Smartphone, Brain, Palette } from 'lucide-react';
+import { AppSettings, ResponseStyle, DataSource, AccentColor } from '../types';
 import { translations, Language } from '../utils/translations';
 import { selectDirectory } from '../services/fileSystemService';
 
@@ -40,6 +40,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
 
   const handleThemeChange = (theme: 'light' | 'dark' | 'system') => {
       onUpdateSettings({ ...settings, theme });
+  };
+
+  const handleAccentChange = (color: AccentColor) => {
+      onUpdateSettings({ ...settings, accentColor: color });
   };
 
   // --- Connection Handlers ---
@@ -244,6 +248,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
       );
   };
 
+  const accentColors: { value: AccentColor; label: string; class: string }[] = [
+      { value: 'slate', label: 'Slate', class: 'bg-slate-800' },
+      { value: 'blue', label: 'Blue', class: 'bg-blue-600' },
+      { value: 'purple', label: 'Purple', class: 'bg-purple-600' },
+      { value: 'emerald', label: 'Emerald', class: 'bg-emerald-600' },
+      { value: 'amber', label: 'Amber', class: 'bg-amber-500' },
+      { value: 'rose', label: 'Rose', class: 'bg-rose-500' },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
@@ -318,6 +331,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                             </button>
                         </div>
                     </div>
+                    
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Accent Color</label>
+                        <div className="flex flex-wrap gap-2">
+                            {accentColors.map(color => (
+                                <button
+                                    key={color.value}
+                                    onClick={() => handleAccentChange(color.value)}
+                                    className={`w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center ${color.class} ${settings.accentColor === color.value ? 'border-gray-900 scale-110 shadow-sm' : 'border-transparent opacity-80 hover:opacity-100'}`}
+                                    title={color.label}
+                                >
+                                    {settings.accentColor === color.value && <Check size={14} className="text-white" />}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             )}
           </div>
@@ -350,7 +379,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                             {settings.connections.journal.map(item => renderConnectionItem(item, 'journal'))}
                         </div>
                     </div>
-                    {/* Simplified for demo: Vault/Todo sections omitted or can be added similarly */}
+
+                    <div className="space-y-2">
+                         <div className="flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider">
+                             <div className="flex items-center gap-2">
+                                <Layers size={12} />
+                                {t.sectionVault}
+                             </div>
+                        </div>
+                        <div className="space-y-2">
+                            {settings.connections.vault.map(item => renderConnectionItem(item, 'vault'))}
+                        </div>
+                    </div>
                 </div>
             )}
           </div>
@@ -385,13 +425,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                      {isAddingStyle && (
                          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                              <input 
-                                className="w-full text-xs p-2 border border-gray-300 rounded" 
+                                className="w-full text-xs p-2 border border-gray-300 rounded bg-white text-gray-900 focus:border-blue-500 focus:outline-none" 
                                 placeholder={t.styleName}
                                 value={newStyleName}
                                 onChange={e => setNewStyleName(e.target.value)}
                              />
                              <textarea 
-                                className="w-full text-xs p-2 border border-gray-300 rounded" 
+                                className="w-full text-xs p-2 border border-gray-300 rounded bg-white text-gray-900 focus:border-blue-500 focus:outline-none" 
                                 placeholder={t.stylePrompt}
                                 value={newStylePrompt}
                                 onChange={e => setNewStylePrompt(e.target.value)}

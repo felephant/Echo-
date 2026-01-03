@@ -79,9 +79,12 @@ export interface DataSource {
   fileHandle?: any; // FileSystemDirectoryHandle
 }
 
+export type AccentColor = 'blue' | 'purple' | 'emerald' | 'amber' | 'rose' | 'slate';
+
 export interface AppSettings {
   language: 'English' | 'Chinese';
   theme: 'light' | 'dark' | 'system';
+  accentColor: AccentColor;
   connections: {
     todo: DataSource[];
     journal: DataSource[];

@@ -52,10 +52,11 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>({
     language: 'Chinese',
     theme: 'light',
+    accentColor: 'slate', // Default to Slate/Black style
     connections: {
         todo: [],
         journal: [{ id: '1', type: 'local', name: 'Local Journal', detail: 'Not connected', isConnected: false }],
-        vault: []
+        vault: [{ id: '2', type: 'local', name: 'Local Knowledge Base', detail: 'Not connected', isConnected: false }]
     },
     responseStyles: []
   });
@@ -311,7 +312,10 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`h-screen w-screen flex flex-col ${settings.theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} font-sans overflow-hidden transition-colors`}>
+    <div 
+        className={`h-screen w-screen flex flex-col ${settings.theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} font-sans overflow-hidden transition-colors`}
+        style={{ colorScheme: settings.theme === 'system' ? 'light dark' : settings.theme }}
+    >
       <header className={`relative h-14 flex items-center justify-between px-4 z-10 flex-shrink-0 bg-transparent`}>
         <div className="flex items-center gap-2">
             <div className={`font-bold text-xl tracking-tight z-10 ${settings.theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
@@ -378,6 +382,7 @@ const App: React.FC = () => {
                 isCollapsed={leftCollapsed}
                 onToggle={() => setLeftCollapsed(!leftCollapsed)}
                 existingDates={existingDates}
+                accentColor={settings.accentColor}
                 />
             </div>
 
@@ -395,6 +400,7 @@ const App: React.FC = () => {
                 language={language}
                 onOpenTrash={() => setIsTrashOpen(true)}
                 trashCount={deletedEntries.length}
+                accentColor={settings.accentColor}
                 />
             </div>
 
