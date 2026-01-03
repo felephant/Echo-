@@ -46,9 +46,14 @@ export const getStoredDirectoryHandle = async (): Promise<FileSystemDirectoryHan
 // --- File System Operations ---
 
 export const selectDirectory = async (): Promise<FileSystemDirectoryHandle | null> => {
-  // @ts-ignore - File System Access API
+  // @ts-ignore - File System Access API check
   if (!window.showDirectoryPicker) {
       throw new Error("File System Access API not supported in this browser.");
+  }
+
+  // Security Check: Prevent crash in iframes (e.g., CodeSandbox, StackBlitz previews)
+  if (window.self !== window.top) {
+      throw new Error("SecurityError: Cross origin sub frames aren't allowed to show a file picker. Please open the app in a new tab.");
   }
 
   try {

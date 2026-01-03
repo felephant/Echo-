@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Mic, MessageSquare, Search, Star, Trash2, Edit2, Sparkles } from 'lucide-react';
+import { Image as ImageIcon, Mic, MessageSquare, Search, Star, Trash2, Edit2, Sparkles, BookDown, ArrowUp, RefreshCcw, CheckCircle, AlertCircle } from 'lucide-react';
 import { JournalEntry, AccentColor } from '../types';
 import { format } from 'date-fns';
 import { translations, Language } from '../utils/translations';
@@ -8,7 +8,8 @@ import { translations, Language } from '../utils/translations';
 interface MiddleColumnProps {
   entries: JournalEntry[];
   currentDate?: Date;
-  onAddEntry: (content: string, source?: JournalEntry['source']) => void;
+  onAddEntry: (content: string) => void;
+  onAskAI: (content: string) => void;
   onSaveEntry: (id: string) => void;
   onUnsaveEntry: (id: string) => void;
   onDeleteEntry: (id: string) => void;
@@ -20,6 +21,8 @@ interface MiddleColumnProps {
   onOpenTrash: () => void;
   trashCount: number;
   accentColor?: AccentColor;
+  isSaving?: boolean;
+  isConnected?: boolean;
 }
 
 const ACCENT_STYLES: Record<AccentColor, { bg: string, text: string, border: string, btnHover: string }> = {
@@ -32,9 +35,9 @@ const ACCENT_STYLES: Record<AccentColor, { bg: string, text: string, border: str
 };
 
 const MiddleColumn: React.FC<MiddleColumnProps> = ({ 
-    entries, currentDate = new Date(), onAddEntry, onSaveEntry, onUnsaveEntry, onDeleteEntry, onEditEntry, 
+    entries, currentDate = new Date(), onAddEntry, onAskAI, onSaveEntry, onUnsaveEntry, onDeleteEntry, onEditEntry, 
     onSearchAssociation, onToggleImportant, onAiReply, language,
-    onOpenTrash, trashCount, accentColor = 'slate'
+    onOpenTrash, trashCount, accentColor = 'slate', isSaving = false, isConnected = false
 }) => {
   const [inputText, setInputText] = useState('');
   const [loadingReplyId, setLoadingReplyId] = useState<string | null>(null);
@@ -50,16 +53,23 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
     }
   }, [entries.length]); 
 
-  const handleSend = () => {
+  const handleSave = () => {
     if (!inputText.trim()) return;
-    onAddEntry(inputText, 'web-input');
+    onAddEntry(inputText);
+    setInputText('');
+  };
+
+  const handleAsk = () => {
+    if (!inputText.trim()) return;
+    onAskAI(inputText);
     setInputText('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      // Default behavior on Enter: Save (Log it)
+      handleSave();
     }
   };
 
@@ -100,11 +110,12 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
             const isAi = entry.source === 'ai-reply';
             const isEditing = editingId === entry.id;
             const isChat = entry.source === 'chat' || entry.source === 'web-input';
+            const isUnsaved = !entry.isSaved;
 
             return (
               <div key={entry.id} className="group animate-in slide-in-from-bottom-2 duration-300 relative flex flex-col items-start gap-1">
                 {/* Content */}
-                <div className={`relative text-sm leading-relaxed text-gray-800 dark:text-gray-200 ${isAi ? 'italic text-purple-700 dark:text-purple-300' : ''} w-full`}>
+                <div className={`relative text-sm leading-relaxed text-gray-800 dark:text-gray-200 ${isAi ? 'italic' : ''} w-full`}>
                     {isEditing ? (
                         <div className="space-y-2 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                             <textarea 
@@ -137,42 +148,69 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
                         <span className="text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-500 px-1 rounded">Echo</span>
                     )}
 
-                    {isAi && <span className="text-xs font-bold text-purple-500">AI</span>}
+                    {isAi && <span className="text-xs font-bold text-gray-500">AI</span>}
                     
                     {entry.isImportant && <Star size={10} className="fill-current text-amber-400" />}
                     
                     {/* Actions only visible on hover */}
-                    {!isEditing && !isAi && (
+                    {!isEditing && (
                         <div className="hidden group-hover:flex items-center gap-1.5 ml-2 pl-2 border-l border-gray-200 dark:border-gray-700">
-                                <button 
-                                    onClick={() => onSearchAssociation(entry.content)}
-                                    className="hover:text-blue-500 transition-colors"
-                                    title={t.recall}
-                                >
-                                    <Search size={12} />
-                                </button>
-                                <button 
-                                    onClick={() => handleRequestAiReply(entry.id, entry.content)}
-                                    className="hover:text-purple-500 transition-colors"
-                                    title={t.aiReply}
-                                    disabled={!!loadingReplyId}
-                                >
-                                    {loadingReplyId === entry.id ? <div className="animate-spin w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full" /> : <Sparkles size={12} />}
-                                </button>
-                                <button 
-                                    onClick={() => onToggleImportant(entry.id)}
-                                    className={`transition-colors ${entry.isImportant ? 'text-amber-400' : 'hover:text-amber-400'}`}
-                                    title={t.mark}
-                                >
-                                    <Star size={12} className={entry.isImportant ? "fill-current" : ""} />
-                                </button>
-                                <button 
-                                    onClick={() => startEditing(entry)}
-                                    className="hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                                    title={t.edit}
-                                >
-                                    <Edit2 size={12} />
-                                </button>
+                                {/* Save/Unsave Action - Explicit Colors as Requested */}
+                                {isChat && (
+                                    <>
+                                        {isUnsaved ? (
+                                            <button 
+                                                onClick={() => onSaveEntry(entry.id)}
+                                                className="text-gray-400 hover:text-green-500 transition-colors"
+                                                title={t.save}
+                                            >
+                                                <BookDown size={12} />
+                                            </button>
+                                        ) : (
+                                            <button 
+                                                onClick={() => onUnsaveEntry(entry.id)}
+                                                className="text-green-500 hover:text-gray-400 transition-colors"
+                                                title={t.unsave}
+                                            >
+                                                <BookDown size={12} />
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+
+                                {!isAi && (
+                                    <>
+                                        <button 
+                                            onClick={() => onSearchAssociation(entry.content)}
+                                            className="hover:text-blue-500 transition-colors"
+                                            title={t.recall}
+                                        >
+                                            <Search size={12} />
+                                        </button>
+                                        <button 
+                                            onClick={() => handleRequestAiReply(entry.id, entry.content)}
+                                            className="hover:text-purple-500 transition-colors"
+                                            title={t.aiReply}
+                                            disabled={!!loadingReplyId}
+                                        >
+                                            {loadingReplyId === entry.id ? <div className="animate-spin w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full" /> : <Sparkles size={12} />}
+                                        </button>
+                                        <button 
+                                            onClick={() => onToggleImportant(entry.id)}
+                                            className={`transition-colors ${entry.isImportant ? 'text-amber-400' : 'hover:text-amber-400'}`}
+                                            title={t.mark}
+                                        >
+                                            <Star size={12} className={entry.isImportant ? "fill-current" : ""} />
+                                        </button>
+                                        <button 
+                                            onClick={() => startEditing(entry)}
+                                            className="hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                                            title={t.edit}
+                                        >
+                                            <Edit2 size={12} />
+                                        </button>
+                                    </>
+                                )}
                                 <button 
                                     onClick={() => onDeleteEntry(entry.id)}
                                     className="hover:text-red-500 transition-colors"
@@ -208,31 +246,58 @@ const MiddleColumn: React.FC<MiddleColumnProps> = ({
                  <button className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors" title="Voice Input (Demo)">
                     <Mic size={18} />
                  </button>
-                 <button 
-                    onClick={onOpenTrash}
-                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors relative" 
-                    title={t.trashTooltip}
-                 >
-                    <Trash2 size={18} />
-                    {trashCount > 0 && (
-                        <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white dark:ring-gray-800"></span>
-                    )}
-                 </button>
             </div>
 
-            <button 
-                onClick={handleSend}
-                disabled={!inputText.trim()}
-                className={`absolute bottom-3 right-3 px-4 py-2 rounded-xl text-sm font-bold text-white shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${styles.bg} ${styles.btnHover}`}
-            >
-                <Send size={16} />
-                {t.send}
-            </button>
+            <div className="absolute bottom-3 right-3 flex gap-2">
+                <button 
+                    onClick={handleAsk}
+                    disabled={!inputText.trim()}
+                    className="px-3 py-2 rounded-xl text-xs font-bold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-blue-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:text-blue-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-sm"
+                    title="Ask AI (Not saved by default)"
+                >
+                    <Sparkles size={14} />
+                    {language === 'Chinese' ? '问' : 'Ask'}
+                </button>
+                <button 
+                    onClick={handleSave}
+                    disabled={!inputText.trim()}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold text-white shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${styles.bg} ${styles.btnHover}`}
+                    title="Save to Journal"
+                >
+                    <ArrowUp size={16} />
+                    {language === 'Chinese' ? '存' : 'Save'}
+                </button>
+            </div>
         </div>
         
-        {/* Footer info - Removed Markdown supported, added Save path */}
-        <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 px-2 text-center">
-             <span>{t.savedTo} Daily/{format(currentDate, 'yyMMdd')}.md</span>
+        {/* Footer Area with Status and Trash */}
+        <div className="flex items-center justify-between mt-2 px-2">
+             <div className="flex items-center gap-1.5">
+                 {!isConnected ? (
+                     <span className="flex items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500 font-medium">
+                         <AlertCircle size={10} /> {t.statusNotConnected}
+                     </span>
+                 ) : isSaving ? (
+                     <span className="flex items-center gap-1 text-[10px] text-blue-500 font-medium animate-pulse">
+                         <RefreshCcw size={10} className="animate-spin" /> {t.statusSyncing}
+                     </span>
+                 ) : (
+                     <span className="flex items-center gap-1 text-[10px] text-green-600 dark:text-green-500 font-medium transition-colors duration-500">
+                         <CheckCircle size={10} /> {t.statusSaved}
+                     </span>
+                 )}
+             </div>
+
+             <button 
+                onClick={onOpenTrash}
+                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors relative flex items-center gap-1" 
+                title={t.trashTooltip}
+             >
+                <Trash2 size={14} />
+                {trashCount > 0 && (
+                    <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
+                )}
+             </button>
         </div>
       </div>
     </div>

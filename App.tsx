@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { format, addDays } from 'date-fns';
 import { Settings, User, Layout, CheckSquare, Book, AlertTriangle, Palette } from 'lucide-react';
@@ -11,7 +12,7 @@ import CustomizeOverviewModal from './components/CustomizeOverviewModal';
 import AppearanceMenu from './components/AppearanceMenu';
 import { generateSearchKeywords, generateEntryReply } from './services/geminiService';
 import { translations, Language } from './utils/translations';
-import { getStoredDirectoryHandle, verifyPermission, readDailyJournal, appendToJournal, rewriteJournal, getJournalDates, searchJournalFiles } from './services/fileSystemService';
+import { getStoredDirectoryHandle, verifyPermission, readDailyJournal, appendToJournal, rewriteJournal, getJournalDates, searchJournalFiles, selectDirectory } from './services/fileSystemService';
 
 const DEFAULT_OVERVIEW_CONFIG: OverviewSectionConfig[] = [
     { id: 'mood', label: 'Mood', visible: true, order: 0, prompt: "The overall mood of the day." },
@@ -21,12 +22,12 @@ const DEFAULT_OVERVIEW_CONFIG: OverviewSectionConfig[] = [
     { id: 'summary', label: 'Summary', visible: true, order: 4, prompt: "Provide a concise summary of the day's events and thoughts, ending with an encouraging sentence." }
 ];
 
-const MIN_COL_WIDTH = 250;
+const MIN_COL_WIDTH = 200;
 const MAX_COL_WIDTH = 600;
-const COLLAPSED_WIDTH = 56; // w-14
-const LAYOUT_GAP = 4; // px (gap-1)
-const LAYOUT_PADDING = 4; // px (p-1)
-const TOTAL_SPACING = (LAYOUT_GAP * 2) + (LAYOUT_PADDING * 2); // Left-Mid gap, Mid-Right gap, Left pad, Right pad
+const COLLAPSED_WIDTH = 56;
+const LAYOUT_GAP = 8; 
+const LAYOUT_PADDING = 4;
+const TOTAL_SPACING = (LAYOUT_GAP * 2) + (LAYOUT_PADDING * 2);
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.JOURNAL);
@@ -39,6 +40,7 @@ const App: React.FC = () => {
   
   const [recallItems, setRecallItems] = useState<RecallItem[]>([]);
   const [isRecallLoading, setIsRecallLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   
   // File System State
   const [fsHandle, setFsHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -49,14 +51,12 @@ const App: React.FC = () => {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   
   // Initialize Left Width to Minimum
-  const [leftWidth, setLeftWidth] = useState(MIN_COL_WIDTH);
+  const [leftWidth, setLeftWidth] = useState(250); 
   
   // Calculate initial right width to match middle width
   const calculateEqualRightWidth = () => {
       if (typeof window === 'undefined') return 400;
-      // Available width for Mid + Right = Window - Left - Spacing
-      const available = window.innerWidth - MIN_COL_WIDTH - TOTAL_SPACING;
-      // Split equally
+      const available = window.innerWidth - 250 - TOTAL_SPACING;
       const target = Math.floor(available / 2);
       return Math.min(Math.max(target, MIN_COL_WIDTH), MAX_COL_WIDTH);
   };
@@ -76,7 +76,7 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>({
     language: 'Chinese',
     theme: 'light',
-    accentColor: 'slate', // Default to Slate/Black style
+    accentColor: 'slate', 
     connections: {
         todo: [],
         journal: [{ id: '1', type: 'local', name: 'Local Journal', detail: 'Not connected', isConnected: false }],
@@ -98,9 +98,9 @@ const App: React.FC = () => {
   }, []);
 
   const effectiveTheme = settings.theme === 'system' ? systemTheme : settings.theme;
-
   const language = settings.language as Language;
   const t = translations[language];
+  const activeStylePrompt = settings.responseStyles.find(s => s.isActive)?.prompt;
 
   // --- Resizing Logic ---
   const handleMouseDown = (direction: 'left' | 'right') => (e: React.MouseEvent) => {
@@ -110,7 +110,6 @@ const App: React.FC = () => {
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
       if (!isResizing) return;
-
       if (isResizing === 'left') {
           const newWidth = Math.min(Math.max(e.clientX - LAYOUT_PADDING, MIN_COL_WIDTH), MAX_COL_WIDTH);
           setLeftWidth(newWidth);
@@ -143,7 +142,7 @@ const App: React.FC = () => {
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
   const handleResetLayout = () => {
-      setLeftWidth(MIN_COL_WIDTH);
+      setLeftWidth(250);
       setRightWidth(calculateEqualRightWidth());
       setLeftCollapsed(false);
       setRightCollapsed(false);
@@ -182,14 +181,12 @@ const App: React.FC = () => {
         setDailyEntries([]); 
         return;
       }
-
       if (!isFsConnected) {
          const hasPerm = await verifyPermission(fsHandle, true);
          if (!hasPerm) return; 
          setIsFsConnected(true);
          refreshCalendarIndicators(fsHandle);
       }
-
       const entries = await readDailyJournal(fsHandle, currentDate);
       setDailyEntries(entries);
     };
@@ -207,53 +204,134 @@ const App: React.FC = () => {
 
   // --- CRUD Handlers ---
 
-  const handleAddEntry = async (content: string, source: JournalEntry['source'] = 'web-input') => {
-    const isChat = source === 'web-input'; 
+  const handleAddEntry = async (content: string, source: JournalEntry['source'] = 'web-input', saveToDisk: boolean = true) => {
+    const isChat = source === 'web-input' || source === 'chat'; 
     const timestamp = new Date();
     
     const newEntry: JournalEntry = {
       id: Date.now().toString(),
       content,
       timestamp,
-      hasTime: true, // Entries created by the app always have a time
-      source: isChat ? 'chat' : source,
+      hasTime: true,
+      source: isChat ? (saveToDisk ? 'web-input' : 'chat') : source,
       isImportant: false,
-      isSaved: false 
+      isSaved: saveToDisk 
     };
 
     setDailyEntries(prev => [...prev, newEntry]);
 
-    if (fsHandle && isFsConnected) {
-        try {
-            await appendToJournal(fsHandle, currentDate, newEntry);
-            setDailyEntries(prev => prev.map(e => e.id === newEntry.id ? { ...e, isSaved: true } : e));
-            setExistingDates(prev => new Set(prev).add(format(currentDate, 'yyyy-MM-dd')));
-        } catch (err) {
-            console.error("Failed to save entry to disk:", err);
+    if (saveToDisk) {
+        setIsSaving(true);
+        let activeHandle = fsHandle;
+        if (!activeHandle) {
+             activeHandle = await getStoredDirectoryHandle();
+             if (activeHandle) setFsHandle(activeHandle);
         }
+
+        if (activeHandle) {
+            const hasPerm = await verifyPermission(activeHandle, true);
+            if (hasPerm) {
+                if (!isFsConnected) setIsFsConnected(true);
+                try {
+                    await appendToJournal(activeHandle, currentDate, newEntry);
+                    setDailyEntries(prev => prev.map(e => e.id === newEntry.id ? { ...e, isSaved: true } : e));
+                    setExistingDates(prev => new Set(prev).add(format(currentDate, 'yyyy-MM-dd')));
+                } catch (err) {
+                    console.error("Failed to save entry to disk:", err);
+                }
+            }
+        }
+        setIsSaving(false);
     }
+  };
+
+  const handleAskAI = async (content: string) => {
+     await handleAddEntry(content, 'chat', false);
+     const replyText = await generateEntryReply(content, settings.language, activeStylePrompt);
+     const replyEntry: JournalEntry = {
+        id: (Date.now() + 1).toString(),
+        content: replyText,
+        timestamp: new Date(),
+        hasTime: true,
+        source: 'ai-reply',
+        isImportant: false,
+        isSaved: false 
+    };
+    setDailyEntries(prev => [...prev, replyEntry]);
   };
 
   const handleSaveEntry = async (id: string) => {
     const entryToSave = dailyEntries.find(e => e.id === id);
     if (!entryToSave) return;
+    
+    setIsSaving(true);
 
-    if (fsHandle && isFsConnected) {
+    let activeHandle = fsHandle;
+    
+    // 1. Recover handle from DB if missing
+    if (!activeHandle) {
+        activeHandle = await getStoredDirectoryHandle();
+        if (activeHandle) setFsHandle(activeHandle);
+    }
+
+    // 2. If NO handle exists, DO NOT OPEN SETTINGS MODAL.
+    // Instead, DIRECTLY ask the user to pick a folder right now.
+    if (!activeHandle) {
         try {
-            await appendToJournal(fsHandle, currentDate, entryToSave);
+            // Direct call to select directory logic
+            activeHandle = await selectDirectory();
+            if (!activeHandle) {
+                setIsSaving(false);
+                return; // User cancelled picker
+            }
+            
+            setFsHandle(activeHandle);
+            
+            // Update Settings State to reflect new connection
+            setSettings(prev => ({
+                ...prev,
+                connections: {
+                    ...prev.connections,
+                    journal: prev.connections.journal.map(c => c.type === 'local' ? { ...c, isConnected: true, detail: activeHandle!.name, fileHandle: activeHandle } : c)
+                }
+            }));
+            
+            setIsFsConnected(true);
+        } catch (e) {
+            console.error("Failed to select directory:", e);
+            const msg = (e as Error).message;
+            if (msg.includes('SecurityError') || msg.includes('Cross origin') || msg.includes('blocked')) {
+                alert("Browser Security Restriction:\n\nFile System Access is blocked in this embedded preview mode.\n\nPlease open the application in a new tab/window (full screen) to use local file features.");
+            } else {
+                alert("Could not select folder. Please try again.");
+            }
+            setIsSaving(false);
+            return;
+        }
+    }
+
+    // 3. Verify/Request Permission (User Gesture Context is preserved in the Click)
+    const hasPerm = await verifyPermission(activeHandle, true);
+    
+    if (hasPerm) {
+        setIsFsConnected(true);
+        try {
+            await appendToJournal(activeHandle, currentDate, entryToSave);
             setDailyEntries(prev => prev.map(e => e.id === id ? { ...e, isSaved: true } : e));
             setExistingDates(prev => new Set(prev).add(format(currentDate, 'yyyy-MM-dd')));
         } catch (err) {
-            console.error("Failed to save manual entry:", err);
-            alert("Failed to write to file. Please check folder permissions.");
+            console.error("Save failed:", err);
+            alert("Failed to write to file. Check console.");
         }
     } else {
-        alert("Please connect a local folder in Settings to save entries.");
-        setIsSettingsOpen(true);
+        alert("Permission denied. Cannot save to disk.");
     }
+    
+    setIsSaving(false);
   };
 
   const handleUnsaveEntry = (id: string) => {
+    // Just toggle the state in UI, as removing from file is destructive and complex to sync
     setDailyEntries(prev => prev.map(e => e.id === id ? { ...e, isSaved: false } : e));
   };
 
@@ -266,7 +344,7 @@ const App: React.FC = () => {
     const newEntries = dailyEntries.filter(e => e.id !== id);
     setDailyEntries(newEntries);
 
-    if (fsHandle && isFsConnected) {
+    if (fsHandle && isFsConnected && entryToDelete.isSaved) {
         await rewriteJournal(fsHandle, currentDate, newEntries);
     }
   };
@@ -275,7 +353,10 @@ const App: React.FC = () => {
     const newEntries = dailyEntries.map(e => e.id === id ? { ...e, content: newContent } : e);
     setDailyEntries(newEntries);
     if (fsHandle && isFsConnected) {
-        await rewriteJournal(fsHandle, currentDate, newEntries);
+        const entry = dailyEntries.find(e => e.id === id);
+        if (entry?.isSaved) {
+            await rewriteJournal(fsHandle, currentDate, newEntries);
+        }
     }
   };
 
@@ -283,30 +364,30 @@ const App: React.FC = () => {
     const newEntries = dailyEntries.map(e => e.id === id ? { ...e, isImportant: !e.isImportant } : e);
     setDailyEntries(newEntries);
     if (fsHandle && isFsConnected) {
-        await rewriteJournal(fsHandle, currentDate, newEntries);
+         const entry = dailyEntries.find(e => e.id === id);
+         if (entry?.isSaved) {
+            await rewriteJournal(fsHandle, currentDate, newEntries);
+         }
     }
   };
 
   const handleRestoreEntry = async (entry: DeletedEntry) => {
      const { deletedAt, originalDateKey, ...rest } = entry;
      const restoredEntry = rest as JournalEntry;
-     
      if (originalDateKey === format(currentDate, 'yyyy-MM-dd')) {
          setDailyEntries(prev => [...prev, restoredEntry].sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime()));
-         if (fsHandle && isFsConnected) {
+         if (fsHandle && isFsConnected && restoredEntry.isSaved) {
              await appendToJournal(fsHandle, currentDate, restoredEntry);
          }
      } else {
          alert("Please navigate to the original date to restore this entry.");
          return;
      }
-
      setDeletedEntries(prev => prev.filter(e => e.id !== entry.id));
   };
 
   const handleAiReply = async (entryId: string, content: string) => {
-    const replyText = await generateEntryReply(content, settings.language);
-    
+    const replyText = await generateEntryReply(content, settings.language, activeStylePrompt);
     const replyEntry: JournalEntry = {
         id: Date.now().toString(),
         content: replyText,
@@ -316,17 +397,7 @@ const App: React.FC = () => {
         isImportant: false,
         isSaved: false 
     };
-
     setDailyEntries(prev => [...prev, replyEntry]);
-    
-    if (fsHandle && isFsConnected) {
-        try {
-            await appendToJournal(fsHandle, currentDate, replyEntry);
-            setDailyEntries(prev => prev.map(e => e.id === replyEntry.id ? { ...e, isSaved: true } : e));
-        } catch (err) {
-            console.error("Failed to save AI reply:", err);
-        }
-    }
   };
 
   const handleUpdateSummary = (summary: DailyData['summary']) => {
@@ -335,16 +406,24 @@ const App: React.FC = () => {
 
   const handleSearchAssociation = async (content: string) => {
     if (!fsHandle || !isFsConnected) {
-        alert("Please connect to a local folder to use Recall features.");
-        return;
+        // Try to connect if missing
+         const handle = await getStoredDirectoryHandle();
+         if (!handle) {
+             alert("Please connect a folder first to use Recall.");
+             return;
+         }
+         setFsHandle(handle);
+         setIsFsConnected(true);
     }
+    
     setIsRecallLoading(true);
     try {
         const keywords = await generateSearchKeywords(content, settings.language);
         if (keywords.length === 0) {
             setRecallItems([]);
         } else {
-             const results = await searchJournalFiles(fsHandle, keywords, currentDate);
+             // Safe to use ! here as we checked above
+             const results = await searchJournalFiles(fsHandle!, keywords, currentDate);
              setRecallItems(results);
         }
     } catch (e) {
@@ -355,7 +434,7 @@ const App: React.FC = () => {
   };
 
   const handleRefreshRecall = async () => {
-    if (!fsHandle || !isFsConnected) return;
+    if (!fsHandle) return;
     if (dailyEntries.length === 0) return;
     setIsRecallLoading(true);
     try {
@@ -433,6 +512,7 @@ const App: React.FC = () => {
                 </nav>
 
                 <div className="flex items-center gap-2 z-10 relative">
+                
                 <div className="relative">
                     <button 
                         onClick={() => setIsAppearanceOpen(!isAppearanceOpen)}
@@ -466,8 +546,8 @@ const App: React.FC = () => {
                 </div>
             </header>
 
-            {/* Main Content Area - Reduced Padding and Gap */}
-            <main className="flex-1 flex overflow-hidden p-1 gap-1">
+            {/* Main Content Area */}
+            <main className="flex-1 flex overflow-hidden p-1 gap-2">
                 {activeTab === Tab.JOURNAL ? (
                 <>
                     <div 
@@ -487,13 +567,13 @@ const App: React.FC = () => {
                         onToggle={() => setLeftCollapsed(!leftCollapsed)}
                         existingDates={existingDates}
                         accentColor={settings.accentColor}
+                        activeStylePrompt={activeStylePrompt}
                         />
                     </div>
                     
-                    {/* Left Resizer */}
                     {!leftCollapsed && (
                         <div 
-                            className="w-1 cursor-col-resize hover:bg-blue-400/50 active:bg-blue-500 transition-colors rounded-full flex-shrink-0 z-20"
+                            className="w-1 cursor-col-resize hover:bg-blue-400/50 active:bg-blue-500 transition-colors rounded-full flex-shrink-0 z-20 -ml-1.5"
                             onMouseDown={handleMouseDown('left')}
                         />
                     )}
@@ -502,7 +582,8 @@ const App: React.FC = () => {
                         <MiddleColumn 
                         currentDate={currentDate}
                         entries={dailyEntries}
-                        onAddEntry={handleAddEntry}
+                        onAddEntry={(content) => handleAddEntry(content, 'web-input', true)}
+                        onAskAI={handleAskAI}
                         onSaveEntry={handleSaveEntry}
                         onUnsaveEntry={handleUnsaveEntry}
                         onEditEntry={handleEditEntry}
@@ -514,13 +595,14 @@ const App: React.FC = () => {
                         onOpenTrash={() => setIsTrashOpen(true)}
                         trashCount={deletedEntries.length}
                         accentColor={settings.accentColor}
+                        isSaving={isSaving}
+                        isConnected={!!fsHandle}
                         />
                     </div>
 
-                    {/* Right Resizer */}
                     {!rightCollapsed && (
                         <div 
-                            className="w-1 cursor-col-resize hover:bg-blue-400/50 active:bg-blue-500 transition-colors rounded-full flex-shrink-0 z-20"
+                            className="w-1 cursor-col-resize hover:bg-blue-400/50 active:bg-blue-500 transition-colors rounded-full flex-shrink-0 z-20 -mr-1.5"
                             onMouseDown={handleMouseDown('right')}
                         />
                     )}
@@ -534,7 +616,7 @@ const App: React.FC = () => {
                         isLoading={isRecallLoading}
                         language={language}
                         onRefresh={handleRefreshRecall}
-                        onAddEntry={handleAddEntry}
+                        onAddEntry={(content) => handleAddEntry(content)}
                         isCollapsed={rightCollapsed}
                         onToggle={() => setRightCollapsed(!rightCollapsed)}
                         />

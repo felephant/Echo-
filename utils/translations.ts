@@ -28,6 +28,9 @@ export const translations = {
       placeholder: 'Write your thoughts...',
       send: 'Send',
       savedTo: 'Entries are saved to',
+      statusSyncing: 'Syncing...',
+      statusSaved: 'Saved',
+      statusNotConnected: 'Not Connected',
       emptyTitle: 'Your timeline is empty today.',
       emptySub: 'Start typing below to add to your journal.',
       aiReply: 'AI Reply',
@@ -121,6 +124,9 @@ export const translations = {
       placeholder: '写下你的想法...',
       send: '发送',
       savedTo: '内容将保存至',
+      statusSyncing: '同步中...',
+      statusSaved: '已保存',
+      statusNotConnected: '未连接',
       emptyTitle: '今天还没有记录。',
       emptySub: '在下方输入开始你的日记。',
       aiReply: 'AI回复',
@@ -182,7 +188,7 @@ export const translations = {
       notConnected: '未连接',
       sectionTodo: '待办事项 & 日程',
       sectionJournal: '日记源',
-      sectionVault: '知识库)',
+      sectionVault: '知识库',
       addSource: '添加来源',
     }
   }

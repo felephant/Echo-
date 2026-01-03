@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, Link as LinkIcon, Check, Plus, ChevronDown, ChevronUp, Edit2, Trash2, BookOpen, Layers, Loader2, Folder, Brain } from 'lucide-react';
+import { X, Link as LinkIcon, Check, Plus, ChevronDown, ChevronUp, Edit2, Trash2, BookOpen, Layers, Loader2, Folder, Brain, Globe, Database } from 'lucide-react';
 import { AppSettings, ResponseStyle, DataSource } from '../types';
 import { translations, Language } from '../utils/translations';
 import { selectDirectory } from '../services/fileSystemService';
@@ -18,8 +18,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
   
   // Connection Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState({ name: '', detail: '' });
+  const [editValues, setEditValues] = useState<{ name: string; detail: string; config: Record<string, string> }>({ name: '', detail: '', config: {} });
   const [isAuthenticating, setIsAuthenticating] = useState<string | null>(null);
+  const [showAddSourceMenu, setShowAddSourceMenu] = useState(false);
 
   // Style Edit State
   const [isAddingStyle, setIsAddingStyle] = useState(false);
@@ -34,6 +35,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
   };
 
   // --- Connection Handlers ---
+
+  const handleAddSource = (type: DataSource['type']) => {
+      const newSource: DataSource = {
+          id: Date.now().toString(),
+          type: type,
+          name: type === 'local' ? 'New Local Folder' : type === 'url' ? 'New Web Link' : 'New Notion Page',
+          detail: 'Not connected',
+          config: {},
+          isConnected: false
+      };
+      
+      const newConnections = { ...settings.connections };
+      newConnections.journal = [...newConnections.journal, newSource];
+      onUpdateSettings({ ...settings, connections: newConnections });
+      setShowAddSourceMenu(false);
+      
+      // Auto-start editing the new source
+      setEditingId(newSource.id);
+      setEditValues({ name: newSource.name, detail: newSource.detail, config: {} });
+  };
 
   const handleConnectionClick = async (partition: 'todo' | 'journal' | 'vault', item: DataSource) => {
     if (item.isConnected) {
@@ -100,13 +121,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
 
   const startEditing = (item: DataSource) => {
       setEditingId(item.id);
-      setEditValues({ name: item.name, detail: item.detail });
+      setEditValues({ name: item.name, detail: item.detail, config: item.config || {} });
   };
 
   const saveEditing = (partition: 'todo' | 'journal' | 'vault') => {
       const newConnections = { ...settings.connections };
       newConnections[partition] = newConnections[partition].map(c => 
-          c.id === editingId ? { ...c, name: editValues.name } : c
+          c.id === editingId ? { 
+              ...c, 
+              name: editValues.name,
+              detail: c.type === 'url' ? (editValues.config['url'] || c.detail) : c.detail,
+              config: editValues.config 
+          } : c
       );
       onUpdateSettings({ ...settings, connections: newConnections });
       setEditingId(null);
@@ -143,13 +169,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
       const isLocal = item.type === 'local';
       const isAuthLoading = isAuthenticating === item.id;
 
+      // Helper to choose icon based on type
+      const getTypeIcon = () => {
+          if (item.type === 'url') return <Globe size={14} />;
+          if (item.type === 'notion') return <Database size={14} />;
+          return <Folder size={14} />;
+      };
+
       return (
         <div key={item.id} className={`flex flex-col gap-2 p-3 border rounded-lg transition-colors ${item.isConnected ? 'border-green-200 dark:border-green-900 bg-green-50/50 dark:bg-green-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className={`w-8 h-8 rounded flex items-center justify-center font-bold text-xs flex-shrink-0 transition-all ${item.isConnected ? 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500'}`}>
                         {isEditing ? <Edit2 size={12}/> : (
-                            item.isConnected ? <Check size={14} /> : <Folder size={14} />
+                            item.isConnected ? <Check size={14} /> : getTypeIcon()
                         )}
                     </div>
                     
@@ -164,6 +197,42 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                                     autoFocus
                                 />
                             </div>
+                            
+                            {item.type === 'notion' && (
+                                <>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Database ID / Page ID</label>
+                                        <input 
+                                            className="w-full text-xs font-mono border-b border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none bg-transparent px-1 py-0.5 text-gray-700 dark:text-gray-300"
+                                            value={editValues.config['pageId'] || ''}
+                                            onChange={(e) => setEditValues({...editValues, config: { ...editValues.config, pageId: e.target.value }})}
+                                            placeholder="e.g. 1a2b3c..."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Integration Token</label>
+                                        <input 
+                                            type="password"
+                                            className="w-full text-xs font-mono border-b border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none bg-transparent px-1 py-0.5 text-gray-700 dark:text-gray-300"
+                                            value={editValues.config['apiKey'] || ''}
+                                            onChange={(e) => setEditValues({...editValues, config: { ...editValues.config, apiKey: e.target.value }})}
+                                            placeholder="secret_..."
+                                        />
+                                    </div>
+                                </>
+                            )}
+
+                            {item.type === 'url' && (
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">URL</label>
+                                    <input 
+                                        className="w-full text-xs font-mono border-b border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none bg-transparent px-1 py-0.5 text-gray-700 dark:text-gray-300"
+                                        value={editValues.config['url'] || ''}
+                                        onChange={(e) => setEditValues({...editValues, config: { ...editValues.config, url: e.target.value }})}
+                                        placeholder="https://..."
+                                    />
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="text-sm overflow-hidden min-w-0">
@@ -176,11 +245,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                                 )}
                             </div>
                             <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 truncate font-mono mt-0.5">
-                                <Folder size={12} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
+                                {getTypeIcon()}
                                 {item.isConnected ? (
                                     <span className="text-gray-700 dark:text-gray-300 font-medium">{item.detail}</span>
                                 ) : (
-                                    <span className="italic text-gray-400 dark:text-gray-600">No folder selected</span>
+                                    <span className="italic text-gray-400 dark:text-gray-600">Not connected</span>
                                 )}
                             </div>
                         </div>
@@ -261,12 +330,49 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
             </div>
 
             {expandedSection === 'connections' && (
-                <div className="space-y-6 border-l-2 border-gray-100 dark:border-gray-800 pl-4 animate-in slide-in-from-top-2 fade-in duration-200">
+                <div className="space-y-6 pt-2 animate-in slide-in-from-top-2 fade-in duration-200">
                     <div className="space-y-2">
                          <div className="flex items-center justify-between text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
                              <div className="flex items-center gap-2">
                                 <BookOpen size={12} />
                                 {t.sectionJournal}
+                             </div>
+                             
+                             <div className="relative">
+                                 <button 
+                                    onClick={() => setShowAddSourceMenu(!showAddSourceMenu)}
+                                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-blue-600 dark:text-blue-400 transition-colors"
+                                    title={t.addSource}
+                                 >
+                                    <Plus size={14} />
+                                 </button>
+                                 
+                                 {/* Add Source Dropdown */}
+                                 {showAddSourceMenu && (
+                                     <>
+                                        <div className="fixed inset-0 z-30" onClick={() => setShowAddSourceMenu(false)}></div>
+                                        <div className="absolute right-0 top-6 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700 z-40 overflow-hidden py-1">
+                                            <button 
+                                                onClick={() => handleAddSource('local')}
+                                                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200"
+                                            >
+                                                <Folder size={12} /> Local Folder
+                                            </button>
+                                            <button 
+                                                onClick={() => handleAddSource('url')}
+                                                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200"
+                                            >
+                                                <Globe size={12} /> Web Link
+                                            </button>
+                                            <button 
+                                                onClick={() => handleAddSource('notion')}
+                                                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200"
+                                            >
+                                                <Database size={12} /> Notion Page
+                                            </button>
+                                        </div>
+                                     </>
+                                 )}
                              </div>
                         </div>
                         <div className="space-y-2">
@@ -305,7 +411,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
             </div>
 
             {expandedSection === 'memory' && (
-                <div className="space-y-4 border-l-2 border-gray-100 dark:border-gray-800 pl-4 animate-in slide-in-from-top-2 fade-in duration-200">
+                <div className="space-y-4 pt-2 animate-in slide-in-from-top-2 fade-in duration-200">
                      <div className="flex items-center justify-between">
                          <label className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">{t.responseStyle}</label>
                          <button 

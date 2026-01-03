@@ -30,6 +30,7 @@ interface LeftColumnProps {
   onToggle?: () => void;
   existingDates?: Set<string>;
   accentColor?: AccentColor;
+  activeStylePrompt?: string;
 }
 
 const ACCENT_STYLES: Record<AccentColor, { bg: string, text: string, ring: string, dot: string }> = {
@@ -44,7 +45,7 @@ const ACCENT_STYLES: Record<AccentColor, { bg: string, text: string, ring: strin
 const LeftColumn: React.FC<LeftColumnProps> = ({ 
   currentDate, onDateChange, dailyData, onUpdateSummary, onRoam, 
   onOpenCustomize, overviewConfig, language, isCollapsed, onToggle, existingDates,
-  accentColor = 'slate'
+  accentColor = 'slate', activeStylePrompt
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['summary']));
@@ -76,7 +77,8 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
     setIsGenerating(true);
     try {
         const entryTexts = dailyData.entries.map(e => e.content);
-        const summary = await generateDailySummary(entryTexts, overviewConfig, language);
+        // Pass activeStylePrompt here
+        const summary = await generateDailySummary(entryTexts, overviewConfig, language, activeStylePrompt);
         if (summary) {
             onUpdateSummary(summary);
         }
@@ -287,7 +289,7 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
                     key={day.toString()}
                     onClick={() => onDateChange(cloneDay)}
                     className={`
-                    relative aspect-square rounded-full flex items-center justify-center text-xs transition-all
+                    relative aspect-square rounded-full flex items-center justify-center text-xs transition-all pb-1
                     ${isSelected ? `${styles.bg} text-white font-bold shadow-sm` : 'hover:bg-gray-200 dark:hover:bg-gray-700'}
                     ${!isCurrentMonth ? 'text-gray-300 dark:text-gray-600' : 'text-gray-600 dark:text-gray-300'}
                     ${isToday && !isSelected ? `border border-gray-300 dark:border-gray-500 ${styles.text} font-bold` : ''}
@@ -295,7 +297,7 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
                 >
                     {formattedDate}
                     {hasData && !isSelected && (
-                        <div className={`absolute bottom-1 w-1 h-1 ${styles.dot} rounded-full`}></div>
+                        <div className={`absolute bottom-[3px] w-1 h-1 ${styles.dot} rounded-full`}></div>
                     )}
                 </button>
             );
@@ -320,7 +322,7 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
              <div className="w-8 h-px bg-gray-100 dark:bg-gray-800"></div>
              <div className="flex flex-col items-center gap-1">
                  <span className="text-2xl font-serif font-bold text-gray-900 dark:text-gray-100">{format(currentDate, 'dd')}</span>
-                 <span className="text-[10px] uppercase font-bold text-gray-400 dark:text-gray-500 tracking-wider writing-vertical-lr">{format(currentDate, 'MMM')}</span>
+                 <span className="text--[10px] uppercase font-bold text-gray-400 dark:text-gray-500 tracking-wider writing-vertical-lr">{format(currentDate, 'MMM')}</span>
              </div>
         </div>
       );

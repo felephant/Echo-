@@ -73,9 +73,10 @@ export enum Tab {
 
 export interface DataSource {
   id: string;
-  type: 'google-calendar' | 'google-drive' | 'obsidian' | 'local' | 'url';
+  type: 'google-calendar' | 'google-drive' | 'obsidian' | 'local' | 'url' | 'notion';
   name: string;
   detail: string; // e.g. path or url
+  config?: Record<string, string>; // Store API keys, IDs, etc.
   isConnected: boolean;
   fileHandle?: any; // FileSystemDirectoryHandle
 }

@@ -7,7 +7,7 @@ const ai = new GoogleGenAI({ apiKey });
 
 const MODEL_TEXT = 'gemini-3-flash-preview';
 
-export const generateDailySummary = async (entries: string[], config?: OverviewSectionConfig[], language: string = 'English') => {
+export const generateDailySummary = async (entries: string[], config?: OverviewSectionConfig[], language: string = 'English', stylePrompt?: string) => {
   if (!apiKey) return null;
   
   const entriesText = entries.join('\n---\n');
@@ -32,13 +32,21 @@ export const generateDailySummary = async (entries: string[], config?: OverviewS
       if (happinessCfg?.prompt) happinessInstruction = happinessCfg.prompt;
   }
 
+  // Inject Style Persona - Strengthened
+  let styleInstruction = "";
+  if (stylePrompt) {
+      styleInstruction = `CRITICAL INSTRUCTION: You must adopt the following persona for the text summary. 
+      Persona/Style: "${stylePrompt}". 
+      Write in the voice of this persona. Do not mention that you are an AI adopting a persona. Just be it.`;
+  }
+
   const prompt = `Analyze the following journal entries for the day and provide a structured summary in ${language}.
   
   Entries:
   ${entriesText}
 
   Instructions:
-  - Text Summary: ${summaryInstruction}
+  - Text Summary: ${summaryInstruction} ${styleInstruction}
   - Mood: ${moodInstruction} (Include a label, a short suggestion, and a trend hint)
   - Stats: ${statsInstruction} (Include count, tasks completed, and a list of specific details/accomplishments)
   - Happiness: ${happinessInstruction}
@@ -95,12 +103,22 @@ export const generateDailySummary = async (entries: string[], config?: OverviewS
   }
 };
 
-export const generateEntryReply = async (entryContent: string, language: string = 'English') => {
+export const generateEntryReply = async (entryContent: string, language: string = 'English', stylePrompt?: string) => {
   if (!apiKey) return "AI services are unavailable (missing API key).";
 
-  const prompt = `You are a thoughtful, empathetic personal journaling assistant. 
-  The user has just written the following entry. Provide a brief, supportive, or insightful comment 
-  that encourages deeper reflection or simply acknowledges their experience. Keep it conversational.
+  let systemPersona = "You are a thoughtful, empathetic personal journaling assistant.";
+  
+  // Strengthened Persona Injection
+  if (stylePrompt) {
+      systemPersona = `You are a character with the following specific personality/style:
+      "${stylePrompt}"
+      
+      CRITICAL: You must reply completely in this character. Do not break character. Do not sound like a generic AI. Use the tone, vocabulary, and sentence structure described above.`;
+  }
+
+  const prompt = `${systemPersona}
+  
+  The user has just written the following entry. Provide a brief comment that encourages deeper reflection or acknowledges their experience. Keep it conversational.
   Please reply in ${language}.
   
   User Entry: "${entryContent}"`;
