@@ -261,19 +261,39 @@ const App: React.FC = () => {
     setIsRecallLoading(true);
     
     try {
-        // 1. AI generates search terms
         const keywords = await generateSearchKeywords(content, settings.language);
-        
         if (keywords.length === 0) {
             setRecallItems([]);
         } else {
-             // 2. Real File System Search
-             // Pass currentDate to exclude it from results
              const results = await searchJournalFiles(fsHandle, keywords, currentDate);
              setRecallItems(results);
         }
     } catch (e) {
         console.error("Recall failed", e);
+    } finally {
+        setIsRecallLoading(false);
+    }
+  };
+
+  const handleRefreshRecall = async () => {
+    if (!fsHandle || !isFsConnected) return;
+    if (dailyEntries.length === 0) return;
+
+    setIsRecallLoading(true);
+    
+    try {
+        // Aggregate all content from today
+        const fullContent = dailyEntries.map(e => e.content).join('\n');
+        const keywords = await generateSearchKeywords(fullContent, settings.language);
+        
+        if (keywords.length === 0) {
+            setRecallItems([]);
+        } else {
+             const results = await searchJournalFiles(fsHandle, keywords, currentDate);
+             setRecallItems(results);
+        }
+    } catch (e) {
+        console.error("Recall refresh failed", e);
     } finally {
         setIsRecallLoading(false);
     }
@@ -383,7 +403,7 @@ const App: React.FC = () => {
                 recallItems={recallItems}
                 isLoading={isRecallLoading}
                 language={language}
-                onRefresh={() => {}}
+                onRefresh={handleRefreshRecall}
                 onAddEntry={handleAddEntry}
                 isCollapsed={rightCollapsed}
                 onToggle={() => setRightCollapsed(!rightCollapsed)}

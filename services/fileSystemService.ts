@@ -121,41 +121,51 @@ export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keyw
                  // @ts-ignore
                  const file = await entry.getFile();
                  const text = await file.text();
-                 const lowerText = text.toLowerCase();
 
-                 // Check if any keyword matches
-                 const matchedKeyword = keywordSet.find(k => lowerText.includes(k));
+                 // Parse the file to get clean entries (strips metadata)
+                 const year = 2000 + parseInt(name.substring(0, 2));
+                 const month = parseInt(name.substring(2, 4)) - 1;
+                 const day = parseInt(name.substring(4, 6));
+                 const dateObj = new Date(year, month, day);
                  
-                 if (matchedKeyword) {
-                    const year = 2000 + parseInt(name.substring(0, 2));
-                    const month = parseInt(name.substring(2, 4)) - 1;
-                    const day = parseInt(name.substring(4, 6));
-                    const dateObj = new Date(year, month, day);
-                    const dateStr = format(dateObj, 'yyyy-MM-dd');
+                 const parsedEntries = parseMarkdown(text, dateObj);
 
-                    // Extract a relevant snippet around the keyword
-                    const idx = lowerText.indexOf(matchedKeyword);
-                    const snippetStart = Math.max(0, idx - 50);
-                    const snippetEnd = Math.min(text.length, idx + 100);
-                    let snippet = text.substring(snippetStart, snippetEnd);
-                    if(snippetStart > 0) snippet = "..." + snippet;
-                    if(snippetEnd < text.length) snippet = snippet + "...";
+                 // Check if any entry matches any keyword
+                 for (const journalEntry of parsedEntries) {
+                    const lowerContent = journalEntry.content.toLowerCase();
+                    const matchedKeyword = keywordSet.find(k => lowerContent.includes(k));
 
-                    results.push({
-                        id: name, // filename as ID
-                        title: format(dateObj, 'MMM do, yyyy'),
-                        snippet: snippet.replace(/\n/g, ' '),
-                        fullContent: text,
-                        date: dateStr,
-                        type: 'journal',
-                        keyword: matchedKeyword, // Group by the keyword that found it
-                        relevanceScore: 1
-                    });
+                    if (matchedKeyword) {
+                        const dateStr = format(dateObj, 'yyyy-MM-dd');
+                        
+                        // Use the CLEAN content from the parsed entry
+                        // Truncate if too long for the snippet
+                        let snippet = journalEntry.content;
+                        if (snippet.length > 150) {
+                            snippet = snippet.substring(0, 150) + "...";
+                        }
 
-                    if (results.length >= limit) break;
+                        results.push({
+                            id: `${name}-${journalEntry.id}`, // Unique ID composed of filename + entry ID
+                            title: format(dateObj, 'MMM do, yyyy'),
+                            snippet: snippet, // Clean text without timestamp/[source]
+                            fullContent: journalEntry.content,
+                            date: dateStr,
+                            type: 'journal',
+                            keyword: matchedKeyword, 
+                            relevanceScore: 1
+                        });
+
+                        // One hit per file is usually enough to avoid clutter, or maybe allow multiple?
+                        // Let's break after finding a good match in this file to diversify results
+                        break; 
+                    }
                  }
+
+                 if (results.length >= limit) break;
+
              } catch (e) {
-                 console.warn(`Failed to read ${name}`, e);
+                 console.warn(`Failed to read/parse ${name}`, e);
              }
         }
     }
