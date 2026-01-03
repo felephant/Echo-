@@ -301,8 +301,19 @@ const App: React.FC = () => {
   };
 
   const handleRoam = () => {
-    const daysAgo = Math.floor(Math.random() * 30);
-    setCurrentDate(subDays(new Date(), daysAgo));
+    // Only roam within dates that actually have data
+    const datesArray = Array.from(existingDates);
+    if (datesArray.length > 0) {
+        const randomDateStr = datesArray[Math.floor(Math.random() * datesArray.length)];
+        // Parse YYYY-MM-DD
+        const [year, month, day] = randomDateStr.split('-').map(Number);
+        // Set date (month is 0-indexed in Date constructor)
+        setCurrentDate(new Date(year, month - 1, day));
+    } else {
+        // Fallback if no data exists yet
+        const daysAgo = Math.floor(Math.random() * 30);
+        setCurrentDate(subDays(new Date(), daysAgo));
+    }
   };
 
   const currentDailyData: DailyData = {

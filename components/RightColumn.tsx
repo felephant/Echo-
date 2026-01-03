@@ -1,6 +1,7 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { RecallItem, RecallItemComment } from '../types';
-import { BookOpen, Calendar, ChevronDown, ChevronRight, Layers, FileText, Pin, X, RefreshCw, Eye, List, Heart, MessageSquare, Sidebar, Trash2 } from 'lucide-react';
+import { BookOpen, Calendar, ChevronDown, ChevronRight, Layers, FileText, Pin, X, RefreshCw, Heart, MessageSquare, Sidebar, Trash2 } from 'lucide-react';
 import { translations, Language } from '../utils/translations';
 import { format } from 'date-fns';
 
@@ -15,6 +16,13 @@ interface RightColumnProps {
   onToggle?: () => void;
 }
 
+const RELEVANCE_LEVELS: Record<number, string> = {
+    1: '小想', // Small Thought (Strict)
+    2: '中想', // Medium Thought
+    3: '漫想', // Roaming Thought
+    4: '乱想'  // Wild Thought (Loose)
+};
+
 const RightColumn: React.FC<RightColumnProps> = ({ 
     recallItems, isLoading, language, onRefresh, onAddEntry, onEntryUpdate, isCollapsed, onToggle
 }) => {
@@ -26,7 +34,10 @@ const RightColumn: React.FC<RightColumnProps> = ({
   const [hiddenItems, setHiddenItems] = useState<Set<string>>(new Set());
   const [removedKeywords, setRemovedKeywords] = useState<Set<string>>(new Set());
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
-  const [viewMode, setViewMode] = useState<'card' | 'list'>('list');
+  
+  // Relevance State - Default to 3 (Roam) to ensure content is visible by default
+  const [relevanceThreshold, setRelevanceThreshold] = useState<number>(3);
+  const [showRelevanceSlider, setShowRelevanceSlider] = useState(false);
   
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [likes, setLikes] = useState<Record<string, string[]>>({});
@@ -50,11 +61,28 @@ const RightColumn: React.FC<RightColumnProps> = ({
   const groupedItems = useMemo(() => {
     const hierarchy: Record<string, { journal: RecallItem[], vault: RecallItem[] }> = {};
 
+    // Map the UI Slider Level (1-4) to a Minimum Score Filter
+    // 1 (Small) -> Strict -> Requires Score >= 3
+    // 2 (Medium) -> Requires Score >= 2
+    // 3 (Roam) -> Loose -> Requires Score >= 1
+    // 4 (Wild) -> Very Loose -> Requires Score >= 1 (or 0 if possible)
+    let minScore = 1;
+    switch (relevanceThreshold) {
+        case 1: minScore = 3; break;
+        case 2: minScore = 2; break;
+        case 3: minScore = 1; break;
+        case 4: minScore = 1; break; 
+        default: minScore = 1;
+    }
+
     recallItems.forEach(item => {
       if (activeTab === 'journal' && item.type !== 'journal') return;
       if (activeTab === 'vault' && (item.type !== 'vault' && item.type !== 'knowledge-base' as any)) return;
       if (hiddenItems.has(item.id)) return;
       
+      // Relevance Filtering
+      if (item.relevanceScore < minScore) return;
+
       const keyword = item.keyword || 'General';
       if (removedKeywords.has(keyword)) return;
       if (showPinnedOnly && !localPinned.has(item.id)) return;
@@ -66,7 +94,7 @@ const RightColumn: React.FC<RightColumnProps> = ({
     });
 
     return hierarchy;
-  }, [recallItems, activeTab, hiddenItems, removedKeywords, showPinnedOnly, localPinned]);
+  }, [recallItems, activeTab, hiddenItems, removedKeywords, showPinnedOnly, localPinned, relevanceThreshold]);
 
   const toggleCollapse = (id: string) => {
     const newSet = new Set(collapsedStates);
@@ -157,34 +185,85 @@ const RightColumn: React.FC<RightColumnProps> = ({
   // --- Expanded View ---
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl shadow-sm overflow-y-auto w-full relative">
-      <div className="p-6 border-b border-gray-100 bg-white sticky top-0 z-10">
-        <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider">{t.retro}</h2>
-                <button onClick={onRefresh} disabled={isLoading} className={`p-1 text-gray-400 hover:text-blue-600 rounded-full hover:bg-gray-100 transition-all ${isLoading ? 'animate-spin' : ''}`}>
-                    <RefreshCw size={12} />
+      <div className="border-b border-gray-100 bg-white sticky top-0 z-20">
+        <div className="p-6 pb-2">
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider">
+                        {language === 'Chinese' ? '有端联想' : 'RETRO'}
+                    </h2>
+                    <button onClick={onRefresh} disabled={isLoading} className={`p-1 text-gray-400 hover:text-blue-600 rounded-full hover:bg-gray-100 transition-all ${isLoading ? 'animate-spin' : ''}`}>
+                        <RefreshCw size={12} />
+                    </button>
+                </div>
+                <div className="flex items-center gap-2">
+                    {/* Relevance Controller */}
+                    <button 
+                        onClick={() => setShowRelevanceSlider(!showRelevanceSlider)} 
+                        className={`flex items-center justify-center px-2.5 py-1.5 rounded-md transition-all text-xs font-bold border ${
+                            showRelevanceSlider || relevanceThreshold !== 3
+                            ? 'bg-blue-50 text-blue-600 border-blue-100' 
+                            : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                        }`}
+                        title="Adjust Relevance"
+                    >
+                        {RELEVANCE_LEVELS[relevanceThreshold]}
+                    </button>
+                    
+                    <button onClick={() => setShowPinnedOnly(!showPinnedOnly)} className={`p-1.5 rounded transition-colors ${showPinnedOnly ? 'text-amber-500 bg-amber-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}>
+                        <Pin size={16} className={showPinnedOnly ? "fill-current" : ""} />
+                    </button>
+                    <button onClick={onToggle} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
+                        <ChevronRight size={16} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Inline Slider */}
+            {showRelevanceSlider && (
+                <div className="mb-4 bg-gray-50 rounded-xl p-3 border border-gray-100 animate-in slide-in-from-top-2 fade-in">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Association Depth</span>
+                        <div className="flex gap-1">
+                             {[1, 2, 3, 4].map(level => (
+                                 <button
+                                    key={level}
+                                    onClick={() => setRelevanceThreshold(level)}
+                                    className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold transition-all ${
+                                        relevanceThreshold === level 
+                                        ? 'bg-blue-500 text-white shadow-sm' 
+                                        : 'bg-white text-gray-400 hover:text-gray-600'
+                                    }`}
+                                 >
+                                     {level}
+                                 </button>
+                             ))}
+                        </div>
+                    </div>
+                    <input 
+                        type="range" 
+                        min="1" 
+                        max="4" 
+                        step="1"
+                        value={relevanceThreshold} 
+                        onChange={(e) => setRelevanceThreshold(Number(e.target.value))} 
+                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-600"
+                    />
+                    <div className="flex justify-between text-[10px] text-gray-400 mt-1.5 font-medium">
+                        <span>{RELEVANCE_LEVELS[1]} (Strict)</span>
+                        <span>{RELEVANCE_LEVELS[4]} (Loose)</span>
+                    </div>
+                </div>
+            )}
+            
+            <div className="flex p-1 bg-gray-100 rounded-lg">
+                <button onClick={() => setActiveTab(activeTab === 'journal' ? 'all' : 'journal')} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'journal' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                    <Calendar size={12} /> {t.journal}
+                </button>
+                <button onClick={() => setActiveTab(activeTab === 'vault' ? 'all' : 'vault')} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'vault' ? 'bg-white shadow-sm text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                    <BookOpen size={12} /> {t.vault}
                 </button>
             </div>
-            <div className="flex items-center gap-1">
-                <button onClick={() => setViewMode(viewMode === 'card' ? 'list' : 'card')} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
-                    {viewMode === 'card' ? <List size={16} /> : <Eye size={16} />}
-                </button>
-                <button onClick={() => setShowPinnedOnly(!showPinnedOnly)} className={`p-1.5 rounded transition-colors ${showPinnedOnly ? 'text-amber-500 bg-amber-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}>
-                    <Pin size={16} className={showPinnedOnly ? "fill-current" : ""} />
-                </button>
-                <button onClick={onToggle} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
-                    <ChevronRight size={16} />
-                </button>
-            </div>
-        </div>
-        
-        <div className="flex p-1 bg-gray-100 rounded-lg">
-            <button onClick={() => setActiveTab(activeTab === 'journal' ? 'all' : 'journal')} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'journal' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-                <Calendar size={12} /> {t.journal}
-            </button>
-            <button onClick={() => setActiveTab(activeTab === 'vault' ? 'all' : 'vault')} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'vault' ? 'bg-white shadow-sm text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}>
-                <BookOpen size={12} /> {t.vault}
-            </button>
         </div>
       </div>
 
@@ -219,7 +298,6 @@ const RightColumn: React.FC<RightColumnProps> = ({
                         </div>
 
                         {!isKeywordCollapsed && (
-                            // Removed border-l-2 and pl-2 ml-1.5 for a cleaner look
                             <div className="space-y-3 mt-1">
                                 {displayItems.map(item => {
                                     const isPinned = localPinned.has(item.id);
@@ -228,15 +306,21 @@ const RightColumn: React.FC<RightColumnProps> = ({
                                     const itemComments = comments[item.id] || [];
                                     const isJournal = item.type === 'journal';
                                     
+                                    // Visual indication of high relevance (Score >= 2)
+                                    const isHighRelevance = item.relevanceScore >= 2;
+
                                     return (
-                                        <div key={item.id} className={`relative bg-white border shadow-sm transition-all group/item ${isExpanded ? 'border-blue-400 ring-1 ring-blue-100' : 'border-gray-200 hover:border-blue-300'} rounded-lg`}>
+                                        <div key={item.id} className={`relative bg-white border shadow-sm transition-all group/item ${isExpanded ? 'border-blue-400 ring-1 ring-blue-100' : isHighRelevance ? 'border-blue-200' : 'border-gray-200 hover:border-blue-300'} rounded-lg`}>
                                             <div className="p-3 cursor-pointer flex items-start justify-between" onClick={() => toggleItemExpansion(item.id)}>
                                                 <div className="flex gap-3 overflow-hidden items-start">
                                                      <div className={`mt-0.5 flex-shrink-0 ${isJournal ? 'text-blue-500' : 'text-emerald-500'}`}>
                                                          {isJournal ? <FileText size={16} /> : <BookOpen size={16} />}
                                                      </div>
                                                      <div className="min-w-0">
-                                                         <h4 className="text-sm font-bold text-gray-800 leading-tight mb-1 truncate">{item.title}</h4>
+                                                         <div className="flex items-center gap-2">
+                                                            <h4 className="text-sm font-bold text-gray-800 leading-tight mb-1 truncate">{item.title}</h4>
+                                                            {isHighRelevance && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mb-1" title="Strong Match"></span>}
+                                                         </div>
                                                          {!isExpanded && <p className="text-xs text-gray-400 truncate">{item.snippet}</p>}
                                                      </div>
                                                 </div>

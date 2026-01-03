@@ -124,16 +124,16 @@ export const generateEntryReply = async (entryContent: string, language: string 
 export const generateSearchKeywords = async (entryContent: string, language: string = 'English'): Promise<string[]> => {
   if (!apiKey) return [];
 
-  const prompt = `Analyze the user's journal entry below and extract 6-8 distinct search terms.
+  const prompt = `Analyze the user's journal entry below and extract 3-5 high-value search terms to find related past entries.
   
   Instructions:
-  1. Identify specific entities (people, places, items).
-  2. Identify broader topics or themes.
-  3. Include synonyms or related concepts (in the same language) that might appear in past entries about similar topics.
+  1. Focus strictly on specific entities (names, places, specific projects, unique items).
+  2. Avoid generic verbs or nouns (e.g., ignore "working", "today", "happy", "went", "feeling").
+  3. If the entry is short, provide fewer, higher-quality keywords.
   
   User Entry: "${entryContent}"
   
-  Return a JSON array of strings (the keywords/phrases).`;
+  Return a JSON array of strings.`;
 
   try {
     const response = await ai.models.generateContent({

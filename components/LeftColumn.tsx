@@ -39,12 +39,26 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['summary']));
   const [isCalendarOpen, setIsCalendarOpen] = useState(true);
   const [viewDate, setViewDate] = useState(currentDate); 
+  
+  // Custom Picker State
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
+  const [isYearPickerOpen, setIsYearPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(viewDate.getFullYear());
+
   const t = translations[language].left;
   const styles = ACCENT_STYLES[accentColor];
 
   useEffect(() => {
       setViewDate(currentDate);
   }, [currentDate]);
+
+  // Sync picker year when opening
+  useEffect(() => {
+      if (isMonthPickerOpen) {
+          setPickerYear(viewDate.getFullYear());
+          setIsYearPickerOpen(false);
+      }
+  }, [isMonthPickerOpen, viewDate]);
 
   const handleGenerateSummary = async () => {
     if (dailyData.entries.length === 0) return;
@@ -66,19 +80,36 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
     }
   };
 
-  const handleMonthSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = e.target.value; // YYYY-MM
-      if(val) {
-          const [year, month] = val.split('-').map(Number);
-          const newDate = new Date(viewDate);
-          newDate.setFullYear(year);
-          newDate.setMonth(month - 1);
-          newDate.setDate(1); // Default to 1st of month to avoid overflow issues
-          setViewDate(newDate);
-          // Optional: Auto-jump current selection to 1st of that month too? 
-          // onDateChange(newDate); // Uncomment if you want clicking month to also select that month's date
+  // Month/Year Picker Logic
+  const changePickerYear = (delta: number) => {
+      if (isYearPickerOpen) {
+          // Jump by 12 years if in year selection mode
+          setPickerYear(prev => prev + (delta * 12));
+      } else {
+          setPickerYear(prev => prev + delta);
       }
   };
+
+  const selectPickerMonth = (monthIndex: number) => {
+      const newDate = new Date(viewDate);
+      newDate.setFullYear(pickerYear);
+      newDate.setMonth(monthIndex);
+      newDate.setDate(1); // Reset to 1st to avoid overflow issues
+      setViewDate(newDate);
+      setIsMonthPickerOpen(false);
+  };
+
+  const selectPickerYear = (year: number) => {
+      setPickerYear(year);
+      setIsYearPickerOpen(false);
+  };
+
+  const monthNames = language === 'Chinese' 
+    ? ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+    : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const yearGridStart = Math.floor(pickerYear / 12) * 12;
+  const yearGrid = Array.from({ length: 12 }, (_, i) => yearGridStart + i);
 
   const toggleSection = (id: string) => {
     const newSet = new Set(expandedSections);
@@ -326,26 +357,90 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
 
       {isCalendarOpen && (
          <div className="px-6 pb-6 pt-4 animate-in slide-in-from-top-2 fade-in border-b border-gray-100 bg-gray-50/50">
-            <div className="flex items-center justify-between mb-4 relative">
-                <button onClick={prevMonth} className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 z-10">
+            <div className="flex items-center justify-between mb-4 relative z-20">
+                <button onClick={prevMonth} className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600">
                     <ChevronLeft size={16} />
                 </button>
                 
-                {/* Interactive Month Label with Hidden Input */}
-                <div className="relative group cursor-pointer">
-                    <span className="text-xs font-bold text-gray-700 uppercase tracking-wide group-hover:text-blue-600 transition-colors flex items-center gap-1">
+                {/* Custom Month/Year Picker */}
+                <div className="relative">
+                    <button 
+                        onClick={() => setIsMonthPickerOpen(!isMonthPickerOpen)}
+                        className="text-xs font-bold text-gray-700 uppercase tracking-wide hover:text-blue-600 transition-colors flex items-center gap-1 focus:outline-none"
+                    >
                         {format(viewDate, 'MMMM yyyy')}
-                        <ChevronDown size={10} className="text-gray-400 group-hover:text-blue-600" />
-                    </span>
-                    <input 
-                        type="month" 
-                        value={format(viewDate, 'yyyy-MM')}
-                        onChange={handleMonthSelect}
-                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                    />
+                        <ChevronDown size={10} className={`text-gray-400 transition-transform ${isMonthPickerOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    {isMonthPickerOpen && (
+                        <>
+                            <div className="fixed inset-0 z-20" onClick={() => setIsMonthPickerOpen(false)} />
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white rounded-xl shadow-xl border border-gray-100 p-4 z-30 w-64 animate-in zoom-in-95 duration-200">
+                                <div className="flex justify-between items-center mb-4">
+                                    <button 
+                                        onClick={() => changePickerYear(-1)}
+                                        className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-900 transition-colors"
+                                    >
+                                        <ChevronLeft size={16} />
+                                    </button>
+                                    
+                                    <button 
+                                        onClick={() => setIsYearPickerOpen(!isYearPickerOpen)}
+                                        className="font-bold text-gray-800 text-sm hover:bg-gray-100 px-2 py-1 rounded transition-colors"
+                                    >
+                                        {isYearPickerOpen ? `${yearGridStart} - ${yearGridStart + 11}` : pickerYear}
+                                    </button>
+                                    
+                                    <button 
+                                        onClick={() => changePickerYear(1)}
+                                        className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-900 transition-colors"
+                                    >
+                                        <ChevronRight size={16} />
+                                    </button>
+                                </div>
+                                
+                                {isYearPickerOpen ? (
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {yearGrid.map(year => (
+                                            <button
+                                                key={year}
+                                                onClick={() => selectPickerYear(year)}
+                                                className={`py-2 rounded-lg text-xs font-medium transition-all ${
+                                                    year === pickerYear 
+                                                    ? `${styles.bg} text-white shadow-sm` 
+                                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                                }`}
+                                            >
+                                                {year}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {monthNames.map((m, i) => {
+                                            const isSelected = viewDate.getMonth() === i && viewDate.getFullYear() === pickerYear;
+                                            return (
+                                                <button
+                                                    key={m}
+                                                    onClick={() => selectPickerMonth(i)}
+                                                    className={`py-2 rounded-lg text-xs font-medium transition-all ${
+                                                        isSelected 
+                                                        ? `${styles.bg} text-white shadow-sm` 
+                                                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                                    }`}
+                                                >
+                                                    {m}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
                 </div>
 
-                <button onClick={nextMonth} className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 z-10">
+                <button onClick={nextMonth} className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600">
                     <ChevronRight size={16} />
                 </button>
             </div>
@@ -374,9 +469,9 @@ const LeftColumn: React.FC<LeftColumnProps> = ({
                 <button 
                   onClick={handleGenerateSummary}
                   disabled={isGenerating}
-                  className={`text-xs ${styles.text} hover:opacity-80 flex items-center gap-1`}
+                  className={`px-2 py-1 rounded text-[10px] font-medium border border-blue-100 bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center gap-1.5 transition-colors shadow-sm`}
                 >
-                  {isGenerating ? <RefreshCw className="animate-spin" size={12} /> : <RefreshCw size={12} />}
+                  {isGenerating ? <RefreshCw className="animate-spin" size={10} /> : <RefreshCw size={10} />}
                   {dailyData.summary ? t.refresh : t.generate}
                 </button>
               )}

@@ -108,7 +108,7 @@ export const getJournalDates = async (handle: FileSystemDirectoryHandle): Promis
 // --- Helper: Search files content ---
 export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keywords: string[], excludeDate?: Date): Promise<RecallItem[]> => {
     const results: RecallItem[] = [];
-    const limit = 20; // Hard limit to prevent browser freeze
+    const limit = 50; // Increased limit as we will filter later
     const keywordSet = keywords.map(k => k.toLowerCase());
     const excludeFileName = excludeDate ? getFileName(excludeDate) : null;
 
@@ -130,35 +130,39 @@ export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keyw
                  
                  const parsedEntries = parseMarkdown(text, dateObj);
 
-                 // Check if any entry matches any keyword
+                 // Check each entry for matches
                  for (const journalEntry of parsedEntries) {
                     const lowerContent = journalEntry.content.toLowerCase();
-                    const matchedKeyword = keywordSet.find(k => lowerContent.includes(k));
-
-                    if (matchedKeyword) {
+                    
+                    // Find ALL matching keywords
+                    const matchedKeywords = keywordSet.filter(k => lowerContent.includes(k));
+                    
+                    if (matchedKeywords.length > 0) {
                         const dateStr = format(dateObj, 'yyyy-MM-dd');
                         
-                        // Use the CLEAN content from the parsed entry
-                        // Truncate if too long for the snippet
+                        // Calculate score based on number of unique keywords matched
+                        // Base score = match count
+                        // Bonus for longer keywords (implies specificity)
+                        let score = matchedKeywords.length;
+                        
                         let snippet = journalEntry.content;
                         if (snippet.length > 150) {
                             snippet = snippet.substring(0, 150) + "...";
                         }
 
+                        // Use the most significant (longest) keyword for display category
+                        const primaryKeyword = matchedKeywords.sort((a,b) => b.length - a.length)[0];
+
                         results.push({
-                            id: `${name}-${journalEntry.id}`, // Unique ID composed of filename + entry ID
+                            id: `${name}-${journalEntry.id}`,
                             title: format(dateObj, 'MMM do, yyyy'),
-                            snippet: snippet, // Clean text without timestamp/[source]
+                            snippet: snippet,
                             fullContent: journalEntry.content,
                             date: dateStr,
                             type: 'journal',
-                            keyword: matchedKeyword, 
-                            relevanceScore: 1
+                            keyword: primaryKeyword, 
+                            relevanceScore: score 
                         });
-
-                        // One hit per file is usually enough to avoid clutter, or maybe allow multiple?
-                        // Let's break after finding a good match in this file to diversify results
-                        break; 
                     }
                  }
 
@@ -170,8 +174,13 @@ export const searchJournalFiles = async (handle: FileSystemDirectoryHandle, keyw
         }
     }
     
-    // Sort by date descending
-    return results.sort((a, b) => b.date.localeCompare(a.date));
+    // Sort by Relevance Score descending, then by Date descending
+    return results.sort((a, b) => {
+        if (b.relevanceScore !== a.relevanceScore) {
+            return b.relevanceScore - a.relevanceScore;
+        }
+        return b.date.localeCompare(a.date);
+    });
 };
 
 // --- Markdown Parsing & formatting ---
